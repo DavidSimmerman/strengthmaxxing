@@ -48,6 +48,13 @@ pnpm dev         # http://localhost:5173, SQLite at ./local.db (migrations auto-
 `API_TOKEN` unset in dev leaves `/api/*` open. To exercise the coach locally,
 run the agent (`cd agent`) and set `AGENT_URL=http://localhost:8787`.
 
+Want realistic sample history (12 backdated sessions, 3 templates, readiness data)
+to see History/Reports populated? Run:
+
+```sh
+cd web && node --experimental-strip-types scripts/demo-seed.mjs
+```
+
 ## Deploy
 
 See [`deploy/README.md`](deploy/README.md) for the Coolify / Docker Compose
