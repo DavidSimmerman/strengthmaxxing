@@ -1,0 +1,30 @@
+@import 'tailwindcss';
+
+/* strengthmaxxing — dark, high-contrast, gym-app energy */
+:root {
+	color-scheme: dark;
+}
+
+@theme {
+	--color-ink: #0a0a0c;
+	--color-panel: #141419;
+	--color-panel2: #1c1c24;
+	--color-line: #2a2a35;
+	--color-accent: #ff5c00; /* barbell orange */
+	--color-accent2: #00e5a0; /* recovery green */
+	--font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+	background: var(--color-ink);
+	color: #f4f4f5;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* number inputs without the ugly spinners */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+	appearance: none;
+	margin: 0;
+}
