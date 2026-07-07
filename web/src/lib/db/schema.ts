@@ -128,7 +128,8 @@ export const sessionsRel = relations(sessions, ({ many, one }) => ({
 export const sessionSetsRel = relations(sessionSets, ({ one, many }) => ({
 	session: one(sessions, { fields: [sessionSets.sessionId], references: [sessions.id] }),
 	exercise: one(exercises, { fields: [sessionSets.exerciseId], references: [exercises.id] }),
-	reps: many(repEvents)
+	// named repEvents (not "reps") so it doesn't shadow the reps integer column
+	repEvents: many(repEvents)
 }));
 export const repEventsRel = relations(repEvents, ({ one }) => ({
 	set: one(sessionSets, { fields: [repEvents.sessionSetId], references: [sessionSets.id] })

@@ -1,0 +1,68 @@
+# strengthmaxxing — Coolify / Docker Compose deployment
+#
+# Build contexts are relative to this file, so we point one level up (../web,
+# ../agent). In Coolify, set the compose "Base Directory" to the repo root and
+# the compose file path to deploy/docker-compose.yml (or copy this file to the
+# repo root) so the ../ contexts resolve.
+#
+# Two services on one network:
+#   web   -> SvelteKit dashboard + JSON API (port 3000), owns the sqlite DB
+#   agent -> Claude coach service (port 8787), reached by web at http://agent:8787
+
+services:
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      # host:container — Coolify's proxy maps its domain to container port 3000.
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      # sqlite lives on the named volume mounted at /data (see volumes below).
+      DB_PATH: "${DB_PATH:-/data/strengthmaxxing.db}"
+      # Bearer token gating /api/* — set this in Coolify secrets.
+      API_TOKEN: "${API_TOKEN}"
+      # Internal service DNS name; do NOT expose the agent publicly.
+      AGENT_URL: "${AGENT_URL:-http://agent:8787}"
+    volumes:
+      - smx-data:/data
+    depends_on:
+      - agent
+    networks:
+      - smx
+
+  agent:
+    build:
+      context: ../agent
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # No published ports: agent is internal-only, reachable at http://agent:8787
+    # from the web service over the shared network. `expose` documents the port.
+    expose:
+      - "8787"
+    environment:
+      PORT: "8787"
+      # Auth for the coach: either mount ~/.claude creds (volume below) so the
+      # `claude` CLI uses the personal subscription, OR set ANTHROPIC_API_KEY.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      AGENT_MODEL: "${AGENT_MODEL:-}"
+    # Option A (personal Claude subscription): mount your ~/.claude creds dir
+    # read-only so the `claude` CLI is authenticated inside the container.
+    # Uncomment the block below and point at the host path that holds the creds
+    # on your Coolify server. Option B (API key) needs no mount — just set
+    # ANTHROPIC_API_KEY above.
+    # volumes:
+    #   - /root/.claude:/home/node/.claude:ro
+    networks:
+      - smx
+
+volumes:
+  # Persists the sqlite database across redeploys/restarts. DB_PATH -> /data/...
+  smx-data:
+
+networks:
+  smx:
+    driver: bridge

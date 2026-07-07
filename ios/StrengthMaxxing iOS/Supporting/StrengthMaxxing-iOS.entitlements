@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements for the iPhone app target.
+  Add this file under Signing & Capabilities (or set CODE_SIGN_ENTITLEMENTS to this path).
+  Enabling the HealthKit capability in Xcode adds the com.apple.developer.healthkit key
+  for you; this file documents the expected contents.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.healthkit</key>
+    <true/>
+    <key>com.apple.developer.healthkit.access</key>
+    <array/>
+    <!-- Optional: share a token/defaults between iPhone and Watch via an App Group.
+         Must match the suiteName used in AppSettings.
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.tech.simmerman.strengthmaxxing</string>
+    </array>
+    -->
+</dict>
+</plist>

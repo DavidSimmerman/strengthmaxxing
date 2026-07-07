@@ -36,10 +36,11 @@ export function createWorkout(input: {
 	exercises: WorkoutExerciseInput[];
 }) {
 	return db.transaction((tx) => {
-		const [w] = tx
+		const w = tx
 			.insert(workouts)
 			.values({ name: input.name, notes: input.notes ?? null })
-			.returning();
+			.returning()
+			.get();
 		insertWorkoutExercises(tx, w.id, input.exercises);
 		return w;
 	});
@@ -63,7 +64,8 @@ export function updateWorkout(
 	});
 }
 
-function insertWorkoutExercises(tx: typeof db, workoutId: number, list: WorkoutExerciseInput[]) {
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+function insertWorkoutExercises(tx: Tx, workoutId: number, list: WorkoutExerciseInput[]) {
 	if (!list?.length) return;
 	tx.insert(workoutExercises)
 		.values(
@@ -82,17 +84,21 @@ function insertWorkoutExercises(tx: typeof db, workoutId: number, list: WorkoutE
 }
 
 export const listWorkouts = () =>
-	db.query.workouts.findMany({
-		where: eq(workouts.archived, false),
-		orderBy: [desc(workouts.createdAt)],
-		with: { exercises: { with: { exercise: true }, orderBy: [workoutExercises.orderIndex] } }
-	});
+	db.query.workouts
+		.findMany({
+			where: eq(workouts.archived, false),
+			orderBy: [desc(workouts.createdAt)],
+			with: { exercises: { with: { exercise: true }, orderBy: [workoutExercises.orderIndex] } }
+		})
+		.sync();
 
 export const getWorkout = (id: number) =>
-	db.query.workouts.findFirst({
-		where: eq(workouts.id, id),
-		with: { exercises: { with: { exercise: true }, orderBy: [workoutExercises.orderIndex] } }
-	});
+	db.query.workouts
+		.findFirst({
+			where: eq(workouts.id, id),
+			with: { exercises: { with: { exercise: true }, orderBy: [workoutExercises.orderIndex] } }
+		})
+		.sync();
 
 export const deleteWorkout = (id: number) =>
 	db.update(workouts).set({ archived: true }).where(eq(workouts.id, id)).run();
@@ -105,7 +111,7 @@ export function startSession(input: {
 	bodyweightKg?: number | null;
 	readinessScore?: number | null;
 }) {
-	const [s] = db
+	return db
 		.insert(sessions)
 		.values({
 			workoutId: input.workoutId ?? null,
@@ -114,8 +120,8 @@ export function startSession(input: {
 			bodyweightKg: input.bodyweightKg ?? null,
 			readinessScore: input.readinessScore ?? null
 		})
-		.returning();
-	return s;
+		.returning()
+		.get();
 }
 
 export type SetInput = {
@@ -134,7 +140,7 @@ export type SetInput = {
 
 export function addSet(sessionId: number, input: SetInput) {
 	return db.transaction((tx) => {
-		const [set] = tx
+		const set = tx
 			.insert(sessionSets)
 			.values({
 				sessionId,
@@ -149,7 +155,8 @@ export function addSet(sessionId: number, input: SetInput) {
 				startedAt: input.startedAt ? new Date(input.startedAt) : null,
 				completedAt: input.completedAt ? new Date(input.completedAt) : new Date()
 			})
-			.returning();
+			.returning()
+			.get();
 		if (input.repEvents?.length) {
 			tx.insert(repEvents)
 				.values(
@@ -193,7 +200,7 @@ export function finishSession(id: number, patch?: { notes?: string; bodyweightKg
 	const restMin = Math.max(0, totalMin - activeMin);
 	const estimatedKcal = estimateKcal(workingForKcal, restMin, bw);
 
-	const [updated] = db
+	return db
 		.update(sessions)
 		.set({
 			endedAt,
@@ -203,18 +210,20 @@ export function finishSession(id: number, patch?: { notes?: string; bodyweightKg
 			notes: patch?.notes ?? s.notes
 		})
 		.where(eq(sessions.id, id))
-		.returning();
-	return updated;
+		.returning()
+		.get();
 }
 
 export const listSessions = (limit = 30) =>
 	db.select().from(sessions).orderBy(desc(sessions.startedAt)).limit(limit).all();
 
 export const getSession = (id: number) =>
-	db.query.sessions.findFirst({
-		where: eq(sessions.id, id),
-		with: { sets: { with: { exercise: true, reps: true } }, workout: true }
-	});
+	db.query.sessions
+		.findFirst({
+			where: eq(sessions.id, id),
+			with: { sets: { with: { exercise: true, repEvents: true } }, workout: true }
+		})
+		.sync();
 
 export const deleteSession = (id: number) => db.delete(sessions).where(eq(sessions.id, id)).run();
 
@@ -258,7 +267,7 @@ export function sessionExport(id: number) {
 	const s = getSession(id);
 	if (!s) return null;
 	const setDetails = s.sets.map((set) => {
-		const offsets = [...set.reps].sort((a, b) => a.repIndex - b.repIndex).map((r) => r.offsetMs);
+		const offsets = [...set.repEvents].sort((a, b) => a.repIndex - b.repIndex).map((r) => r.offsetMs);
 		return {
 			exercise: set.exercise.name,
 			muscle: set.exercise.muscle,

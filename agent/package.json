@@ -1,0 +1,14 @@
+{
+  "name": "strengthmaxxing-coach-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Coach AI agent microservice for strengthmaxxing. Generates workout plans and autoregulates progression via the Claude CLI (personal subscription) or the Anthropic API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
