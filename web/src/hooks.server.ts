@@ -19,12 +19,7 @@ try {
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/api/')) {
-		const token = env.API_TOKEN;
-		if (token) {
-			const auth = event.request.headers.get('authorization') ?? '';
-			if (auth !== `Bearer ${token}`) throw error(401, 'unauthorized');
-		}
-		// CORS for the native clients / cross-origin calls.
+		// CORS preflight must NOT require auth (browsers send OPTIONS without the header).
 		if (event.request.method === 'OPTIONS') {
 			return new Response(null, {
 				headers: {
@@ -33,6 +28,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 					'access-control-allow-headers': 'authorization,content-type'
 				}
 			});
+		}
+		const token = env.API_TOKEN;
+		if (token) {
+			const auth = event.request.headers.get('authorization') ?? '';
+			if (auth !== `Bearer ${token}`) throw error(401, 'unauthorized');
 		}
 		const res = await resolve(event);
 		res.headers.set('access-control-allow-origin', '*');

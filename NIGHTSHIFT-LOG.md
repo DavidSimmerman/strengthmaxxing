@@ -62,9 +62,19 @@ the web API over HTTP, never the DB directly → no concurrent-writer problem.
 - [x] web/Dockerfile (multi-stage, native module survives), agent/Dockerfile, docker-compose
 - [x] Coolify guide (deploy/README.md), root README.md, .env.example — compose validates
 
-### Final
-- [ ] codex review --uncommitted
-- [ ] Green build (pnpm build) + committed
+### Final — ✅ DONE
+- [x] Adversarial review. `codex review --commit` choked for 30+ min re-reading the huge mixed
+      commit (verbose iOS Swift + build artifacts) and never produced a verdict — killed it.
+      Did a focused manual review of the risk surface instead:
+      - **agent subprocess**: SAFE — `execFile` (no shell), static argv, user prompt via stdin →
+        zero command-injection surface; bounded timeout/buffer; 1MB body cap.
+      - **SQL**: drizzle parameterizes everything; no raw string SQL with user input.
+      - **API input validation**: endpoints validate types + return 400 on bad bodies.
+      - **FOUND + FIXED a real bug**: `hooks.server.ts` ran the auth check before the CORS
+        preflight handler → OPTIONS returned 401 when API_TOKEN is set, breaking cross-origin
+        browser clients. Reordered so OPTIONS bypasses auth. Verified: OPTIONS→200, GET no-token
+        →401, GET+token→200.
+- [x] Green build (`pnpm build`) + svelte-check 0 errors + committed
 
 ## Runtime port notes (local verify)
 - Ports 8787 AND 8790 are taken by OTHER pre-existing VM services. Agent runs locally on
@@ -88,8 +98,19 @@ the web API over HTTP, never the DB directly → no concurrent-writer problem.
   headless container tonight.
 
 ## How to run / verify
-- Web: `cd web && pnpm install && pnpm db:push && pnpm dev` → http://localhost:5173
-- (fill in agent + tests as built)
+- **LIVE NOW:** https://strengthmaxxing.simmerman.cc (Cloudflare-gated to you). Prod build
+  (`node build`) on VM port **4173** w/ the demo-seeded DB; coach agent on **8899**.
+  (These are background processes started during the run — see the harness task list. If a
+  reboot killed them: `cd web && PORT=4173 HOST=0.0.0.0 DB_PATH=./local.db AGENT_URL=http://localhost:8899 node build`
+  and `cd agent && PORT=8899 node server.js`, then `expose strengthmaxxing 4173`.)
+- Web dev: `cd web && pnpm install && pnpm dev` → http://localhost:5173 (migrations auto-run).
+- Demo data: `cd web && node --experimental-strip-types scripts/demo-seed.mjs`
+- API smoke test (server running): `cd web && node scripts/smoke.mjs`
+- Metrics self-check: `cd web && node --experimental-strip-types src/lib/metrics.ts`
+- Coach live: `cd agent && node server.js` then `curl localhost:8787/health`; plan calls ~40-80s.
+- Prod/Docker: `pnpm build` → `node build`; or `deploy/docker-compose.yml` (see deploy/README.md).
+- Note: `healthmaxxing.simmerman.cc` (localhost:5184) is your real health app — the export
+  (`GET /api/export`) + readiness import (`PUT /api/readiness/:date`) endpoints target it.
 
 ## Resume pointer
 If context compacted: re-read this file + the task brief. Continue from the first unchecked
