@@ -1,8 +1,8 @@
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { error, type Handle } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
+import { error, redirect, type Handle } from '@sveltejs/kit';
 import { db } from '$lib/db';
 import { seedExercises } from '$lib/db/seed';
+import { COOKIE, authEnabled, checkBearer, checkCookie } from '$lib/server/auth';
 
 // Run once at server startup: apply migrations, then seed the exercise library.
 try {
@@ -12,31 +12,40 @@ try {
 	console.error('[boot] migrate/seed failed:', e);
 }
 
+const PUBLIC = ['/login', '/healthz'];
+
 /**
- * Guard the external JSON API (`/api/*`) with a bearer token when API_TOKEN is set.
- * The watch, iOS app and coach agent send it. The web dashboard uses server load
- * functions (direct DB), so it never hits these routes and needs no token.
+ * Auth, when a password is configured (see $lib/server/auth):
+ * - `/api/*` accepts the bearer API_TOKEN (watch, phone, agent) OR the dashboard cookie, so the
+ *   dashboard's own fetches to /api (coach page) work.
+ * - Every dashboard page needs the cookie; otherwise → /login.
  */
 export const handle: Handle = async ({ event, resolve }) => {
-	if (event.url.pathname.startsWith('/api/')) {
+	const { pathname } = event.url;
+	const authed = () =>
+		!authEnabled() ||
+		checkCookie(event.cookies.get(COOKIE)) ||
+		checkBearer(event.request.headers.get('authorization'));
+
+	if (pathname.startsWith('/api/')) {
 		// CORS preflight must NOT require auth (browsers send OPTIONS without the header).
 		if (event.request.method === 'OPTIONS') {
 			return new Response(null, {
 				headers: {
 					'access-control-allow-origin': '*',
-					'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+					'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
 					'access-control-allow-headers': 'authorization,content-type'
 				}
 			});
 		}
-		const token = env.API_TOKEN;
-		if (token) {
-			const auth = event.request.headers.get('authorization') ?? '';
-			if (auth !== `Bearer ${token}`) throw error(401, 'unauthorized');
-		}
+		if (!authed()) throw error(401, 'unauthorized');
 		const res = await resolve(event);
 		res.headers.set('access-control-allow-origin', '*');
 		return res;
+	}
+
+	if (!PUBLIC.includes(pathname) && !authed()) {
+		throw redirect(303, `/login?next=${encodeURIComponent(pathname + event.url.search)}`);
 	}
 	return resolve(event);
 };

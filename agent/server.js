@@ -5,16 +5,16 @@
 //
 // Contract (see ../API_CONTRACT.md, "Coach agent service"):
 //   GET  /health   -> {ok:true}
-//   POST /plan     -> {plan:{name,days:[{name,exercises:[{name,sets,reps,restSec,notes}]}]},rationale}
+//   POST /plan     -> {plan:{name,weeks,deloadWeek,progression,days:[{name,dayOfWeek,exercises:[{name,sets,reps,restSec,weightKg,notes}]}]},rationale,reply}
 //   POST /progress -> {adjustments:[{name,suggestedWeightKg,suggestedReps,deltaPct,reason}],summary}
 
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 
 const PORT = Number(process.env.PORT) || 8787;
-const AGENT_MODEL = process.env.AGENT_MODEL || 'claude-opus-4-8';
+const AGENT_MODEL = process.env.AGENT_MODEL || 'claude-opus-5-5';
 const CLI_BIN = process.env.CLAUDE_BIN || 'claude';
-const MODEL_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 120_000;
+const MODEL_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 240_000; // multi-week plans take a while
 
 // ---------------------------------------------------------------------------
 // Model invocation
@@ -43,7 +43,7 @@ function callClaudeCli(prompt) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLI_BIN,
-      ['-p', '--output-format', 'json'],
+      ['-p', '--output-format', 'json', '--model', AGENT_MODEL],
       { timeout: MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err && !stdout) {
@@ -79,7 +79,7 @@ async function callAnthropicApi(prompt) {
     },
     body: JSON.stringify({
       model: AGENT_MODEL,
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
@@ -139,17 +139,41 @@ const SYSTEM_RULES =
 
 function planPrompt(input) {
   const schema =
-    '{"plan":{"name":string,"days":[{"name":string,"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"notes":string}]}]},"rationale":string}';
-  return [
+    '{"plan":{"name":string,"weeks":number,"deloadWeek":number|null,"progression":string,' +
+    '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun",' +
+    '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"notes":string}]}]},' +
+    '"rationale":string,"reply":string}';
+  const lines = [
     SYSTEM_RULES,
     '',
-    'Task: design a workout program.',
-    `Inputs (JSON): ${JSON.stringify(input)}`,
-    `Produce exactly ${input.daysPerWeek} training days.`,
-    'Choose exercises only from the available equipment; respect constraints and injury notes.',
-    'Set sets/reps/restSec appropriate to the goal and experience level.',
-    `Output ONLY minified JSON of this shape: ${schema}`,
-  ].join('\n');
+    'Task: design a multi-week strength program for this one lifter.',
+    `Profile (JSON): ${JSON.stringify(input.profile ?? {})}`,
+    `What they asked for, in their words: ${JSON.stringify(input.request ?? '')}`,
+    `Training history (JSON; weights in kg; e1rm = estimated 1-rep max): ${JSON.stringify(input.history ?? {})}`,
+    `Exercise library — use ONLY these exact names: ${JSON.stringify(input.library ?? [])}`,
+    `Produce exactly ${input.profile?.daysPerWeek ?? 4} training days per week, each fitting in ` +
+      `${input.profile?.sessionMin ?? 60} minutes including rest.`,
+    'Program length 4-8 weeks; put a deload in the last week unless the request says otherwise.',
+    'weightKg = the week-1 working weight. Base it on their history (about 75-85% of e1rm for 5-8 reps). ' +
+      'For exercises with no history, estimate a conservative start from their related lifts. Use null ' +
+      'ONLY for pure bodyweight moves (pull-ups, dips, leg raises). Round to what a US gym loads ' +
+      '(multiples of 2.27 kg = 5 lb for barbell/machine, 1.13 kg = 2.5 lb for dumbbells).',
+    `Write every weight in prose ("progression", "rationale", "reply") in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}. ` +
+      'Only the weightKg JSON fields are in kg.',
+    '"progression" = one or two sentences on how load/reps move week to week.',
+    'Honor equipment, exercises to avoid and injury notes strictly. Honor stated likes/dislikes.',
+    '"rationale" = 2-3 sentences citing their actual numbers. "reply" = a short, direct chat reply ' +
+      '(1-3 sentences) to what they asked, addressed to them.',
+  ];
+  if (input.currentPlan) {
+    lines.push(
+      `Their CURRENT program (JSON): ${JSON.stringify(input.currentPlan)}`,
+      'Revise the current program to satisfy the new request. Change only what the request ' +
+        'requires; keep everything else identical. Say what changed in "reply".'
+    );
+  }
+  lines.push(`Output ONLY minified JSON of this shape: ${schema}`);
+  return lines.join('\n');
 }
 
 function progressPrompt(input) {
@@ -165,6 +189,7 @@ function progressPrompt(input) {
     'Base each suggestion on lastWeightKg and lastReps vs targetReps, then modulate by readiness',
     'and context (timeOfDay, kcalBalance deficit, sleepHours, sorenessNote).',
     'deltaPct is the percent change in load vs lastWeightKg (may be negative).',
+    `Write weights inside "reason" and "summary" in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}.`,
     'CRITICAL: each output "name" MUST exactly match the corresponding input exercise name.',
     'Include one adjustment object per input exercise.',
     `Output ONLY minified JSON of this shape: ${schema}`,
@@ -205,10 +230,11 @@ function readBody(req) {
 
 function validatePlan(b) {
   if (!b || typeof b !== 'object') return 'body required';
-  if (typeof b.goal !== 'string' || !b.goal) return 'goal (string) required';
-  if (!Number.isFinite(b.daysPerWeek) || b.daysPerWeek < 1 || b.daysPerWeek > 7)
-    return 'daysPerWeek (1-7) required';
-  if (typeof b.experience !== 'string' || !b.experience) return 'experience (string) required';
+  if (typeof b.request !== 'string' && (!b.profile || typeof b.profile !== 'object'))
+    return 'request (string) or profile (object) required';
+  const days = b.profile?.daysPerWeek;
+  if (days !== undefined && (!Number.isFinite(days) || days < 1 || days > 7)) return 'profile.daysPerWeek must be 1-7';
+  if (b.library !== undefined && !Array.isArray(b.library)) return 'library must be an array of names';
   return null;
 }
 
@@ -221,19 +247,23 @@ function validateProgress(b) {
 }
 
 async function handleModelEndpoint(res, prompt) {
-  let text;
-  try {
-    text = await askModel(prompt);
-  } catch (e) {
-    return send(res, 502, { error: `model call failed: ${e.message}` });
+  // One retry on unparseable output — models occasionally wrap JSON in prose.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let text;
+    try {
+      text = await askModel(
+        attempt === 0 ? prompt : `${prompt}\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object.`
+      );
+    } catch (e) {
+      return send(res, 502, { error: `model call failed: ${e.message}` });
+    }
+    try {
+      return send(res, 200, parseModelJson(text));
+    } catch {
+      /* retry */
+    }
   }
-  let parsed;
-  try {
-    parsed = parseModelJson(text);
-  } catch {
-    return send(res, 502, { error: 'bad model output' });
-  }
-  return send(res, 200, parsed);
+  return send(res, 502, { error: 'bad model output' });
 }
 
 const server = createServer(async (req, res) => {

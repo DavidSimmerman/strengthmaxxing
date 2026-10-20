@@ -27,7 +27,17 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (typeof b.weightKg !== 'number' || !Number.isFinite(b.weightKg) || b.weightKg < 0)
 		throw error(400, 'weightKg must be a non-negative number');
 
+	if (b.clientId !== undefined && b.clientId !== null && (typeof b.clientId !== 'string' || !b.clientId))
+		throw error(400, 'clientId must be a string');
+	const clientId = (b.clientId as string | undefined) ?? null;
+	if (clientId) {
+		// Watch outbox retries: same clientId → the set we already stored, no duplicate.
+		const existing = repo.findSetByClientId(clientId);
+		if (existing) return json(existing, { status: 200 });
+	}
+
 	const input: repo.SetInput = {
+		clientId,
 		exerciseId: b.exerciseId,
 		reps: b.reps,
 		weightKg: b.weightKg,
@@ -65,9 +75,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		throw error(500, e instanceof Error ? e.message : 'failed to load session');
 	}
 	if (!session) throw error(404, 'session not found');
-	// Sessions are immutable once finished — a set landing here would silently
-	// diverge from the cached volume/kcal rollups stamped at finish time.
-	if (session.endedAt) throw error(409, 'session already finished');
+	// Sets landing after finish are accepted (late watch sync); repo recomputes rollups.
 
 	try {
 		const set = repo.addSet(sessionId, input);

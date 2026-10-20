@@ -2,13 +2,14 @@
 	import LineChart from '$lib/components/LineChart.svelte';
 	import BarChart from '$lib/components/BarChart.svelte';
 	import Scatter from '$lib/components/Scatter.svelte';
-	import { num, kg, shortDate, muscleColor } from '$lib/ui';
+	import { num, shortDate, muscleColor } from '$lib/ui';
+	import { vol, toDisplay, units } from '$lib/units.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	const volumeSeries = $derived(
-		data.sessions.map((s) => ({ value: s.totalVolumeKg, label: shortDate(s.startedAt) }))
+		data.sessions.map((s) => ({ value: toDisplay(s.totalVolumeKg), label: shortDate(s.startedAt) }))
 	);
 	const kcalSeries = $derived(
 		data.sessions.map((s) => ({ value: s.estimatedKcal, label: shortDate(s.startedAt) }))
@@ -20,7 +21,7 @@
 		Object.entries(data.muscleTotals)
 			.sort((a, b) => b[1] - a[1])
 			.slice(0, 8)
-			.map(([m, v]) => ({ label: m, value: v, color: muscleColor(m) }))
+			.map(([m, v]) => ({ label: m, value: toDisplay(v), color: muscleColor(m) }))
 	);
 	const offDays = $derived(data.sessions.filter((s) => s.offDay));
 </script>
@@ -45,7 +46,7 @@
 			<div class="mb-2 flex items-baseline justify-between">
 				<h2 class="text-sm font-bold uppercase tracking-wider text-zinc-400">Tonnage per session</h2>
 				<span class="text-xs tabular-nums text-zinc-500"
-					>{num(data.sessions.reduce((a, b) => a + b.totalVolumeKg, 0))} kg total</span
+					>{vol(data.sessions.reduce((a, b) => a + b.totalVolumeKg, 0))} total</span
 				>
 			</div>
 			<LineChart series={volumeSeries} color="var(--color-accent)" />
@@ -78,7 +79,7 @@
 			<h2 class="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-400">
 				Volume by muscle · all sessions
 			</h2>
-			<BarChart data={muscleBars} unit=" kg" />
+			<BarChart data={muscleBars} unit={` ${units()}`} />
 		</section>
 
 		<!-- strength vs readiness scatter -->
@@ -93,9 +94,9 @@
 			</div>
 			{#if data.strengthVsReadiness.length > 1}
 				<Scatter
-					points={data.strengthVsReadiness}
+					points={data.strengthVsReadiness.map((p) => ({ ...p, y: toDisplay(p.y) }))}
 					xLabel="readiness →"
-					yLabel="best e1RM (kg) →"
+					yLabel={`best e1RM (${units()}) →`}
 				/>
 			{:else}
 				<p class="grid h-[180px] place-items-center text-center text-xs text-zinc-600">

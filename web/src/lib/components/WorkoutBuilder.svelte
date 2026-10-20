@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
 	import { supersetLabel } from '$lib/ui';
+	import { toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
 
 	type LibExercise = { id: number; name: string; muscle: string; category: string; defaultRestSec: number };
 	type Slot = {
@@ -14,6 +15,8 @@
 		restSec: number;
 		supersetGroup: number | null;
 	};
+	// editing copy: weight held in the user's unit, converted back to kg in the payload
+	type EditSlot = Omit<Slot, 'targetWeightKg'> & { weight: number; category: string };
 
 	let {
 		library,
@@ -33,8 +36,12 @@
 	// svelte-ignore state_referenced_locally
 	let notes = $state(initial?.notes ?? '');
 	// svelte-ignore state_referenced_locally
-	let slots = $state<Slot[]>(
-		initial ? (structuredClone($state.snapshot(initial.exercises)) as Slot[]) : []
+	let slots = $state<EditSlot[]>(
+		(initial?.exercises ?? []).map(({ targetWeightKg, ...s }) => ({
+			...s,
+			weight: toDisplay(targetWeightKg),
+			category: library.find((l) => l.id === s.exerciseId)?.category ?? 'barbell'
+		}))
 	);
 	let picker = $state('');
 
@@ -50,7 +57,8 @@
 				muscle: lib.muscle,
 				targetSets: 3,
 				targetReps: 8,
-				targetWeightKg: 0,
+				weight: 0,
+				category: lib.category,
 				restSec: lib.defaultRestSec,
 				supersetGroup: null
 			}
@@ -80,7 +88,7 @@
 				supersetGroup: s.supersetGroup,
 				targetSets: s.targetSets,
 				targetReps: s.targetReps,
-				targetWeightKg: s.targetWeightKg,
+				targetWeightKg: fromDisplay(s.weight),
 				restSec: s.restSec
 			}))
 		)
@@ -145,7 +153,13 @@
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 					<Stepper bind:value={slot.targetSets} label="Sets" step={1} min={1} max={20} />
 					<Stepper bind:value={slot.targetReps} label="Reps" step={1} min={1} max={100} />
-					<Stepper bind:value={slot.targetWeightKg} label="Weight" step={2.5} min={0} unit="kg" />
+					<Stepper
+						bind:value={slot.weight}
+						label="Weight"
+						step={weightStep(slot.category)}
+						min={0}
+						unit={units()}
+					/>
 					<div class="flex flex-col gap-1">
 						<span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
 							>Rest</span

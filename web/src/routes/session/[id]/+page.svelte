@@ -2,7 +2,8 @@
 	import { enhance } from '$app/forms';
 	import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
-	import { num, dur, supersetLabel } from '$lib/ui';
+	import { dur, supersetLabel } from '$lib/ui';
+	import { vol, wt, units } from '$lib/units.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -10,39 +11,18 @@
 	// rest timer trigger — bump the key + set restSec whenever a set is logged
 	let restKey = $state(0);
 	let restSec = $state(120);
-	function onLogged(sec: number) {
+	let prFlash = $state<string | null>(null);
+	function onLogged(sec: number, pr: number | null) {
 		restSec = sec;
 		restKey += 1;
+		if (pr) {
+			prFlash = `New PR! Estimated 1-rep max ${wt(pr)}`;
+			setTimeout(() => (prFlash = null), 5000);
+		}
 	}
 
-	// ad-hoc: extra exercises added client-side (before their first set exists server-side)
-	let extraIds = $state<number[]>([]);
 	let picker = $state('');
-
-	// build the display list = server exercises + client-added ones not already present
-	const displayExercises = $derived.by(() => {
-		const present = new Set(data.exercises.map((e) => e.exerciseId));
-		const extras = extraIds
-			.filter((id) => !present.has(id))
-			.map((id) => {
-				const lib = data.library.find((l) => l.id === id)!;
-				return {
-					exerciseId: lib.id,
-					name: lib.name,
-					muscle: lib.muscle,
-					category: lib.category,
-					targetSets: 3,
-					targetReps: 8,
-					targetWeightKg: 0,
-					restSec: lib.defaultRestSec,
-					supersetGroup: null as number | null,
-					sets: [] as never[],
-					lastWeight: 0,
-					lastReps: 8
-				};
-			});
-		return [...data.exercises, ...extras];
-	});
+	const displayExercises = $derived(data.exercises);
 
 	// group by superset: null groups render standalone, shared numbers cluster
 	type Ex = (typeof displayExercises)[number];
@@ -65,12 +45,6 @@
 		return out;
 	});
 
-	function addPicked() {
-		const id = Number(picker);
-		if (id && !extraIds.includes(id)) extraIds = [...extraIds, id];
-		picker = '';
-	}
-
 	let confirmFinish = $state(false);
 </script>
 
@@ -89,8 +63,8 @@
 		<div class="text-[10px] uppercase tracking-wider text-zinc-500">sets</div>
 	</div>
 	<div class="px-4 py-3 text-center">
-		<div class="text-lg font-black tabular-nums text-accent">{num(data.totalVolume)}</div>
-		<div class="text-[10px] uppercase tracking-wider text-zinc-500">kg volume</div>
+		<div class="text-lg font-black tabular-nums text-accent">{vol(data.totalVolume).split(' ')[0]}</div>
+		<div class="text-[10px] uppercase tracking-wider text-zinc-500">{units()} volume</div>
 	</div>
 	<div class="px-4 py-3 text-center">
 		<div class="text-lg font-black tabular-nums">
@@ -99,6 +73,10 @@
 		<div class="text-[10px] uppercase tracking-wider text-zinc-500">elapsed</div>
 	</div>
 </div>
+
+{#if prFlash}
+	<div class="mb-3 rounded-2xl bg-accent2 px-4 py-3 text-center font-black text-ink">🏆 {prFlash}</div>
+{/if}
 
 <!-- sticky rest timer -->
 <div class="sticky top-2 z-10 mb-4">
@@ -132,11 +110,21 @@
 	{/each}
 </div>
 
-<!-- add exercise (ad-hoc) -->
-<div class="mt-4 flex gap-2">
+<!-- add exercise (saved on the session, so it survives reloads) -->
+<form
+	method="POST"
+	action="?/addExercise"
+	class="mt-4 flex gap-2"
+	use:enhance={() =>
+		async ({ update }) => {
+			picker = '';
+			await update({ reset: false });
+		}}
+>
 	<select
+		name="exerciseId"
 		bind:value={picker}
-		class="flex-1 rounded-xl border border-line bg-panel px-3 py-3 text-sm text-zinc-200 outline-none focus:border-accent"
+		class="min-w-0 flex-1 rounded-xl border border-line bg-panel px-3 py-3 text-sm text-zinc-200 outline-none focus:border-accent"
 	>
 		<option value="">+ Add an exercise…</option>
 		{#each data.library as l (l.id)}
@@ -144,12 +132,11 @@
 		{/each}
 	</select>
 	<button
-		onclick={addPicked}
 		disabled={!picker}
 		class="rounded-xl border border-line bg-panel px-5 py-3 font-semibold text-zinc-200 disabled:opacity-40"
 		>Add</button
 	>
-</div>
+</form>
 
 <!-- finish -->
 <div class="mt-6 mb-2">

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { kg } from '$lib/ui';
+	import { wt } from '$lib/units.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -30,11 +30,7 @@
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
-					goal,
-					daysPerWeek,
-					experience,
-					equipment,
-					constraints: constraints || undefined
+					profile: { goal, daysPerWeek, experience, equipment: [equipment], avoid: constraints || undefined }
 				})
 			});
 			const body = await res.json().catch(() => ({}));
@@ -236,7 +232,7 @@
 										<div class="flex items-center justify-between gap-2">
 											<span class="font-semibold">{adj.name}</span>
 											<span class="flex items-center gap-2 tabular-nums">
-												<span class="font-bold text-accent2">{kg(adj.suggestedWeightKg)}</span>
+												<span class="font-bold text-accent2">{wt(adj.suggestedWeightKg)}</span>
 												<span class="text-zinc-500">× {adj.suggestedReps}</span>
 												<span
 													class="rounded px-1.5 py-0.5 text-xs font-bold"

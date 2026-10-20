@@ -35,10 +35,10 @@ match the input names so the app can map results back.
 | Var                 | Default              | Purpose |
 |---------------------|----------------------|---------|
 | `PORT`              | `8787`               | Listen port. |
-| `AGENT_MODEL`       | `claude-opus-4-8`    | Model id for the **API fallback** path. |
+| `AGENT_MODEL`       | `claude-opus-5-5`    | Model id (passed to the CLI as `--model` and used by the API fallback). |
 | `ANTHROPIC_API_KEY` | *(unset)*            | Enables the API fallback when set. |
 | `CLAUDE_BIN`        | `claude`             | Path/name of the CLI binary. |
-| `AGENT_TIMEOUT_MS`  | `120000`             | Timeout per model call. |
+| `AGENT_TIMEOUT_MS`  | `240000`             | Timeout per model call. |
 
 ## Run locally
 

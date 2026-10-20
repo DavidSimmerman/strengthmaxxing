@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import RepTimeline from '$lib/components/RepTimeline.svelte';
-	import { num, kg, mmss, dateTime, muscleColor, readinessBand, supersetLabel } from '$lib/ui';
+	import { num, mmss, dateTime, muscleColor, readinessBand, supersetLabel } from '$lib/ui';
+	import { wt, vol as fmtVol, toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
+	import Stepper from '$lib/components/Stepper.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -12,6 +14,16 @@
 	const muscleMax = $derived(Math.max(1, ...muscleRows.map(([, v]) => v)));
 	const band = $derived(readinessBand(data.session.readinessScore));
 	let confirmDelete = $state(false);
+
+	// tap a set to fix it (e.g. the watch miscounted) — rollups recompute server-side
+	let editingId = $state<number | null>(null);
+	let editReps = $state(0);
+	let editWeight = $state(0);
+	function startEdit(s: { id: number; reps: number; weightKg: number }) {
+		editingId = s.id;
+		editReps = s.reps;
+		editWeight = toDisplay(s.weightKg);
+	}
 </script>
 
 <header class="mb-4 flex items-start justify-between gap-3">
@@ -32,7 +44,7 @@
 
 <!-- summary stats -->
 <div class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-	{#each [{ v: num(data.session.totalVolumeKg) + ' kg', l: 'volume', c: 'text-accent' }, { v: num(data.session.estimatedKcal), l: 'kcal', c: 'text-zinc-100' }, { v: data.session.durationSec ? mmss(data.session.durationSec) : '—', l: 'duration', c: 'text-zinc-100' }, { v: kg(data.session.bodyweightKg), l: 'bodyweight', c: 'text-zinc-100' }] as stat (stat.l)}
+	{#each [{ v: fmtVol(data.session.totalVolumeKg), l: 'volume', c: 'text-accent' }, { v: num(data.session.estimatedKcal), l: 'kcal', c: 'text-zinc-100' }, { v: data.session.durationSec ? mmss(data.session.durationSec) : '—', l: 'duration', c: 'text-zinc-100' }, { v: wt(data.session.bodyweightKg), l: 'bodyweight', c: 'text-zinc-100' }] as stat (stat.l)}
 		<div class="rounded-xl border border-line bg-panel px-3 py-3">
 			<div class="text-lg font-black tabular-nums {stat.c}">{stat.v}</div>
 			<div class="text-[10px] uppercase tracking-wider text-zinc-500">{stat.l}</div>
@@ -55,7 +67,7 @@
 						></div>
 					</div>
 					<span class="w-16 shrink-0 text-right text-xs tabular-nums text-zinc-400"
-						>{num(vol)} kg</span
+						>{fmtVol(vol)}</span
 					>
 				</div>
 			{/each}
@@ -77,28 +89,57 @@
 								>{supersetLabel(ex.supersetGroup)}</span
 							>
 						{/if}
-						<h3 class="font-bold">{ex.name}</h3>
+						<a href="/exercises/{ex.exerciseId}" class="font-bold hover:text-accent">{ex.name}</a>
 					</div>
 					{#if ex.bestE1rm > 0}
 						<span class="text-sm tabular-nums text-zinc-500"
-							>best e1RM <span class="font-bold text-accent">{kg(ex.bestE1rm)}</span></span
+							>best e1RM <span class="font-bold text-accent">{wt(ex.bestE1rm)}</span></span
 						>
 					{/if}
 				</div>
 
 				<div class="flex flex-col gap-2">
-					{#each ex.sets as s (s.setIndex + '-' + s.weightKg)}
+					{#each ex.sets as s (s.id)}
+						{#if editingId === s.id}
+							<form
+								method="POST"
+								action="?/editSet"
+								class="rounded-xl border border-line bg-ink p-3"
+								use:enhance={() =>
+									async ({ result, update }) => {
+										if (result.type === 'success') editingId = null;
+										await update({ reset: false });
+									}}
+							>
+								<input type="hidden" name="setId" value={s.id} />
+								<input type="hidden" name="reps" value={editReps} />
+								<input type="hidden" name="weightKg" value={fromDisplay(editWeight)} />
+								<div class="grid grid-cols-2 gap-2">
+									<Stepper bind:value={editReps} label="Reps" step={1} min={1} max={100} accent="accent2" />
+									<Stepper bind:value={editWeight} label="Weight" step={weightStep(ex.category)} min={0} unit={units()} />
+								</div>
+								<div class="mt-2 flex gap-2 text-sm">
+									<button formaction="?/deleteSet" class="rounded-lg px-3 py-2 font-semibold text-red-400 hover:bg-red-500/10"
+										>Delete</button
+									>
+									<button type="button" onclick={() => (editingId = null)} class="ml-auto rounded-lg px-3 py-2 text-zinc-400"
+										>Cancel</button
+									>
+									<button class="rounded-lg bg-accent2 px-4 py-2 font-bold text-ink">Save</button>
+								</div>
+							</form>
+						{:else}
 						<div class="rounded-xl bg-ink p-3" class:opacity-60={s.isWarmup}>
-							<div class="flex items-center gap-3 text-sm tabular-nums">
+							<button type="button" onclick={() => startEdit(s)} title="Edit set" class="flex w-full items-center gap-3 text-left text-sm tabular-nums">
 								<span class="w-6 text-center font-bold text-zinc-500"
 									>{s.isWarmup ? 'W' : s.setIndex + 1}</span
 								>
 								<span class="font-semibold">{s.reps || '—'} reps</span>
 								<span class="text-zinc-600">×</span>
-								<span class="font-semibold">{kg(s.weightKg)}</span>
+								<span class="font-semibold">{wt(s.weightKg)}</span>
 								{#if s.rpe}<span class="text-xs text-zinc-500">RPE {s.rpe}</span>{/if}
-								<span class="ml-auto text-xs text-zinc-500">e1RM {kg(s.e1rmKg)}</span>
-							</div>
+								<span class="ml-auto text-xs text-zinc-500">e1RM {wt(s.e1rmKg)} ✎</span>
+							</button>
 							{#if s.repTimeline.length >= 3}
 								<div class="mt-2 border-t border-line pt-2">
 									<RepTimeline offsets={s.repTimeline} decayPct={s.fatigue.decayPct} />
@@ -111,6 +152,7 @@
 								</div>
 							{/if}
 						</div>
+						{/if}
 					{/each}
 				</div>
 			</div>

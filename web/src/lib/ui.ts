@@ -3,13 +3,6 @@
  * Formatting, small color/scale mappers for readiness, and tiny inline-SVG geometry helpers.
  */
 
-/** kg → nice string. Drops trailing .0, keeps .5 etc. */
-export function kg(n: number | null | undefined): string {
-	if (n == null) return '—';
-	const r = Math.round(n * 10) / 10;
-	return (Number.isInteger(r) ? r.toString() : r.toFixed(1)) + ' kg';
-}
-
 /** Compact number w/ thousands separator (volume, kcal). */
 export function num(n: number | null | undefined): string {
 	if (n == null) return '—';
@@ -31,21 +24,21 @@ export function dur(ms: number | null | undefined): string {
 	return `${Math.floor(min / 60)}h ${(min % 60).toString().padStart(2, '0')}m`;
 }
 
-/** ISO date / Date → "Mon 7 Jul" */
+/** ISO date / Date → "Mon, Jul 7" */
 export function shortDate(d: Date | string | number | null | undefined): string {
 	if (d == null) return '—';
 	const date = d instanceof Date ? d : new Date(d);
-	return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+	return date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-/** ISO date / Date → "7 Jul, 09:14" */
+/** ISO date / Date → "Jul 7, 9:14 AM" */
 export function dateTime(d: Date | string | number | null | undefined): string {
 	if (d == null) return '—';
 	const date = d instanceof Date ? d : new Date(d);
 	return (
-		date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+		date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) +
 		', ' +
-		date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+		date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 	);
 }
 

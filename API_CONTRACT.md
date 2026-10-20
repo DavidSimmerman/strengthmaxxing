@@ -105,3 +105,63 @@ Native app talks to the web JSON API. Base URL + bearer token in app settings.
 - On finish: `POST /api/sessions/:id/finish`, then write an `HKWorkout` to HealthKit (Apple
   Fitness) using the `/healthkit` payload shape (or build locally from the session).
 - Supersets: exercises with the same `supersetGroup` are cycled without rest between them.
+
+---
+
+## v2 additions (Oct 2026) — authoritative for web + iOS
+
+### Auth
+- `/api/*` accepts `Authorization: Bearer $API_TOKEN` **or** a valid dashboard session cookie
+  (`smx_session`, set by `POST /login` with `DASHBOARD_PASSWORD`, falling back to `API_TOKEN`).
+- Dashboard pages require the cookie whenever a password/token is configured. `/login` and
+  `/healthz` are always public.
+
+### Settings (shared by dashboard, phone, watch)
+- `GET /api/settings` → `{units:"lb"|"kg", voiceCount:boolean, restAlarmSnoozeSec:number}`
+  (defaults: `lb`, `true`, `60`). `PATCH /api/settings` with any subset.
+- Storage + math stay in **kg**. Clients convert at display time. lb display rounds to 0.5 lb
+  for stored values (`kg / 0.45359237`), weight steppers step 5 lb (barbell/machine/cable) or
+  2.5 lb (dumbbell), kg mode keeps 2.5 / 2 / 1.
+
+### Idempotent, offline-friendly writes
+- `POST /api/sessions` accepts optional `clientId` (UUID string) and `startedAt` (epoch ms).
+  If a session with that `clientId` exists, it is returned with **200** (not a duplicate 201).
+- `POST /api/sessions/:id/sets` accepts optional `clientId` (UUID). Same-clientId repeat → 200
+  with the existing set. Sets **are accepted after finish** — the server recomputes the
+  session's rollups (volume / kcal) whenever a set is added, edited or deleted post-finish.
+- `reps` must be ≥ 1. Clients treat a 0-rep set as "skipped" and do not post it.
+- `rpe` is optional; clients send `null` unless the user actually set it.
+
+### Edit / delete a logged set
+- `PATCH /api/sessions/:id/sets/:setId` body any of `{reps, weightKg, rpe, isWarmup}` → set
+- `DELETE /api/sessions/:id/sets/:setId` → 204
+
+### Exercises
+- `POST /api/exercises` body `{name, muscle, category, isBodyweight?, defaultRestSec?, met?}` →
+  201 custom exercise (409 if name exists).
+- `GET /api/exercises/:id/history` → `{exercise, sets:[{date,sessionId,reps,weightKg,e1rm}], prs}`
+
+### Rep-counter calibration (watch learns per exercise)
+The watch owns the algorithm; the server stores an opaque JSON blob per exercise so learning
+survives reinstalls and is shared across watches.
+- `GET /api/calibration` → `[{exerciseId, params:object, samples:number, updatedAt}]`
+- `PUT /api/calibration/:exerciseId` body `{params:object, samples:number}` → row
+
+### Raw motion traces (for offline tuning of the counter)
+- `POST /api/motion-traces` body
+  `{exerciseId, setClientId?, sampleHz, detectedReps, actualReps, params?, samples:[[tMs,ax,ay,az,gx,gy,gz,rx,ry,rz],...]}`
+  (`a*` = userAcceleration g, `g*` = gravity unit vector, `r*` = rotationRate rad/s) → 201 `{id}`.
+  Body limit 4 MB. `GET /api/motion-traces?exerciseId=` lists metadata (no samples).
+
+### Coach v2 (web → agent)
+- `GET /api/coach/profile` → `{profile, activeProgram, week}`; `PUT /api/coach/profile` body
+  `{goal?, daysPerWeek?, sessionMin?, experience?, equipment?:string[], avoid?, notes?}`.
+- `POST /api/coach/plan` body `{request?, profile?, revise?}` — the web adds `units`, `history`
+  (per-exercise best e1RM + last top set) and `library` (exact exercise names) and forwards to
+  agent `POST /plan`. `revise:true` sends the active program as `currentPlan` to edit.
+  → `{plan:{name,weeks,deloadWeek,progression,days:[{name,dayOfWeek,exercises:[{name,exerciseId,sets,reps,restSec,weightKg,notes}]}]},rationale,reply}`
+- `POST /api/coach/program` body `{plan}` → saves each day as a workout template, retires the
+  previous program's templates, stores it as `activeProgram`. 201.
+- `POST /api/coach/progress` now bases each exercise on the **top set** (best e1RM) of its last
+  session. `POST /api/coach/progress/apply` body `{workoutId, adjustments}` writes accepted
+  suggestions into the template's `targetWeightKg` / `targetReps`.

@@ -23,12 +23,23 @@ services:
       HOST: "0.0.0.0"
       # sqlite lives on the named volume mounted at /data (see volumes below).
       DB_PATH: "${DB_PATH:-/data/strengthmaxxing.db}"
-      # Bearer token gating /api/* — set this in Coolify secrets.
+      # Bearer token gating /api/* (watch, phone, agent) — set this in Coolify secrets.
       API_TOKEN: "${API_TOKEN}"
+      # Dashboard sign-in password. Falls back to API_TOKEN if unset.
+      DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-}"
+      # Watch motion recordings can be ~1-2 MB; SvelteKit's default body cap is 512 KB.
+      BODY_SIZE_LIMIT: "${BODY_SIZE_LIMIT:-4M}"
+      # Dates on the dashboard render in this zone.
+      TZ: "${TZ:-America/New_York}"
       # Internal service DNS name; do NOT expose the agent publicly.
       AGENT_URL: "${AGENT_URL:-http://agent:8787}"
     volumes:
       - smx-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       - agent
     networks:

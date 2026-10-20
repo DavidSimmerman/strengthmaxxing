@@ -23,6 +23,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	);
 
 	type OutSet = {
+		id: number;
 		setIndex: number;
 		reps: number;
 		weightKg: number;
@@ -33,8 +34,10 @@ export const load: PageServerLoad = async ({ params }) => {
 		repTimeline: number[];
 	};
 	const byExercise: {
+		exerciseId: number;
 		name: string;
 		muscle: string;
+		category: string;
 		supersetGroup: number | null;
 		bestE1rm: number;
 		sets: OutSet[];
@@ -45,6 +48,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		const reps = repCounts.get(set.id) ?? 0;
 		const offsets = [...set.repEvents].sort((a, b) => a.repIndex - b.repIndex).map((r) => r.offsetMs);
 		const out: OutSet = {
+			id: set.id,
 			setIndex: set.setIndex,
 			reps,
 			weightKg: set.weightKg,
@@ -57,8 +61,10 @@ export const load: PageServerLoad = async ({ params }) => {
 		let g = byExercise.find((x) => x.name === set.exercise.name);
 		if (!g) {
 			g = {
+				exerciseId: set.exerciseId,
 				name: set.exercise.name,
 				muscle: set.exercise.muscle,
+				category: set.exercise.category,
 				supersetGroup: set.supersetGroup,
 				bestE1rm: 0,
 				sets: []
@@ -95,6 +101,21 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
+	editSet: async ({ params, request }) => {
+		const fd = await request.formData();
+		const reps = Number(fd.get('reps'));
+		const weightKg = Number(fd.get('weightKg'));
+		if (!Number.isInteger(reps) || reps < 1) return fail(400, { error: 'Reps must be at least 1' });
+		if (!Number.isFinite(weightKg) || weightKg < 0) return fail(400, { error: 'Enter a weight' });
+		const row = repo.updateSet(Number(params.id), Number(fd.get('setId')), { reps, weightKg });
+		if (!row) return fail(404, { error: 'Set not found' });
+		return { ok: true };
+	},
+	deleteSet: async ({ params, request }) => {
+		const fd = await request.formData();
+		repo.deleteSet(Number(params.id), Number(fd.get('setId')));
+		return { ok: true };
+	},
 	delete: async ({ params }) => {
 		const id = Number(params.id);
 		if (!id) return fail(400, { error: 'missing id' });

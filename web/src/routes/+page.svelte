@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import Ring from '$lib/components/Ring.svelte';
-	import { kg, num, dur, readinessBand, shortDate } from '$lib/ui';
+	import { num, dur, readinessBand, shortDate } from '$lib/ui';
+	import { wt } from '$lib/units.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -158,9 +159,9 @@
 					<span class="text-lg">{i === 0 ? '🥇' : '🏋️'}</span>
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-semibold">{pr.exercise}</p>
-						<p class="text-xs text-zinc-500">{pr.reps}×{kg(pr.weightKg)} · {shortDate(pr.when)}</p>
+						<p class="text-xs text-zinc-500">{pr.reps}×{wt(pr.weightKg)} · {shortDate(pr.when)}</p>
 					</div>
-					<span class="text-lg font-black tabular-nums text-accent">{kg(pr.e1rm)}</span>
+					<span class="text-lg font-black tabular-nums text-accent">{wt(pr.e1rm)}</span>
 				</li>
 			{/each}
 		</ul>

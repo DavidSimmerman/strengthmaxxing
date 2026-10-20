@@ -2,15 +2,24 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
+	import { setUnits } from '$lib/units.svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
+	// before children render (SSR too), and again whenever settings change
+	$effect.pre(() => {
+		setUnits(data.units);
+	});
+	// svelte-ignore state_referenced_locally
+	setUnits(data.units);
+	const bare = $derived(page.url.pathname === '/login');
 
 	const nav = [
 		{ href: '/', label: 'Today', icon: '⚡' },
 		{ href: '/workouts', label: 'Workouts', icon: '🏋️' },
 		{ href: '/history', label: 'History', icon: '📈' },
 		{ href: '/coach', label: 'Coach', icon: '🤖' },
-		{ href: '/reports', label: 'Reports', icon: '🧬' }
+		{ href: '/reports', label: 'Reports', icon: '🧬' },
+		{ href: '/settings', label: 'Settings', icon: '⚙️' }
 	];
 	const active = (href: string) =>
 		href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
@@ -25,6 +34,9 @@
 	<title>strengthmaxxing</title>
 </svelte:head>
 
+{#if bare}
+	<main class="mx-auto max-w-3xl px-4 py-6">{@render children()}</main>
+{:else}
 <div class="min-h-screen pb-24 md:pb-0 md:pl-56">
 	<!-- desktop sidebar -->
 	<aside
@@ -70,3 +82,4 @@
 		{/each}
 	</nav>
 </div>
+{/if}

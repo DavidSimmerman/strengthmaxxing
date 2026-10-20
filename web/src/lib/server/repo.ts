@@ -3,7 +3,7 @@
  * Both the JSON API (routes/api) and the dashboard (+page.server actions) call these,
  * so business rules (rollups, export shape, fatigue math) live in exactly one spot.
  */
-import { and, desc, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, ne } from 'drizzle-orm';
 import { db } from '$lib/db';
 import {
 	exercises,
@@ -12,12 +12,125 @@ import {
 	sessions,
 	sessionSets,
 	repEvents,
-	readiness
+	readiness,
+	settings,
+	calibration,
+	motionTraces
 } from '$lib/db/schema';
 import { e1rm, tonnage, repFatigue, estimateKcal, readinessScore } from '$lib/metrics';
 
 // ---------- exercises ----------
 export const listExercises = () => db.select().from(exercises).orderBy(exercises.muscle, exercises.name).all();
+
+export function createExercise(input: {
+	name: string;
+	muscle: string;
+	category: string;
+	isBodyweight?: boolean;
+	defaultRestSec?: number;
+	met?: number;
+}) {
+	return db
+		.insert(exercises)
+		.values({
+			name: input.name,
+			muscle: input.muscle,
+			category: input.category,
+			isBodyweight: input.isBodyweight ?? input.category === 'bodyweight',
+			defaultRestSec: input.defaultRestSec ?? 90,
+			met: input.met ?? 5,
+			isCustom: true
+		})
+		.returning()
+		.get();
+}
+
+export const isUniqueError = (e: unknown) =>
+	e instanceof Error && e.message.includes('UNIQUE constraint failed');
+
+/** Every working set of one exercise, oldest first, plus all-time PRs. */
+export function exerciseHistory(exerciseId: number) {
+	const exercise = db.select().from(exercises).where(eq(exercises.id, exerciseId)).get();
+	if (!exercise) return null;
+	const rows = db
+		.select({
+			sessionId: sessionSets.sessionId,
+			date: sessions.startedAt,
+			reps: sessionSets.reps,
+			weightKg: sessionSets.weightKg
+		})
+		.from(sessionSets)
+		.innerJoin(sessions, eq(sessionSets.sessionId, sessions.id))
+		.where(and(eq(sessionSets.exerciseId, exerciseId), eq(sessionSets.isWarmup, false)))
+		.orderBy(sessions.startedAt, sessionSets.setIndex)
+		.all();
+	const sets = rows.map((r) => ({ ...r, e1rm: +e1rm(r.weightKg, r.reps).toFixed(1) }));
+	// rep-max table: heaviest weight ever moved for at least N reps
+	const repMax: Record<number, number> = {};
+	for (const r of sets)
+		for (const n of [1, 3, 5, 8, 10])
+			if (r.reps >= n && r.weightKg > (repMax[n] ?? 0)) repMax[n] = r.weightKg;
+	const best = sets.reduce<(typeof sets)[number] | null>((b, r) => (!b || r.e1rm > b.e1rm ? r : b), null);
+	return { exercise, sets, prs: { bestE1rm: best, repMax } };
+}
+
+/** For each exercise: its working sets from the most recent other session ("last time"). */
+export function lastPerformance(exerciseIds: number[], excludeSessionId: number) {
+	const out = new Map<number, { date: Date; sets: { reps: number; weightKg: number }[] }>();
+	for (const exerciseId of exerciseIds) {
+		const last = db
+			.select({ sessionId: sessionSets.sessionId, date: sessions.startedAt })
+			.from(sessionSets)
+			.innerJoin(sessions, eq(sessionSets.sessionId, sessions.id))
+			.where(and(eq(sessionSets.exerciseId, exerciseId), ne(sessionSets.sessionId, excludeSessionId)))
+			.orderBy(desc(sessions.startedAt))
+			.limit(1)
+			.get();
+		if (!last) continue;
+		const sets = db
+			.select({ reps: sessionSets.reps, weightKg: sessionSets.weightKg })
+			.from(sessionSets)
+			.where(
+				and(
+					eq(sessionSets.sessionId, last.sessionId),
+					eq(sessionSets.exerciseId, exerciseId),
+					eq(sessionSets.isWarmup, false)
+				)
+			)
+			.orderBy(sessionSets.setIndex)
+			.all();
+		out.set(exerciseId, { date: last.date, sets });
+	}
+	return out;
+}
+
+export function addSessionExercise(sessionId: number, exerciseId: number) {
+	const s = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+	if (!s) return null;
+	const ids = s.extraExerciseIds ?? [];
+	if (!ids.includes(exerciseId))
+		db.update(sessions).set({ extraExerciseIds: [...ids, exerciseId] }).where(eq(sessions.id, sessionId)).run();
+	return true;
+}
+
+/** Best e1RM per exercise across all sets except those in `excludeSessionId`. */
+export function bestE1rmByExercise(excludeSessionId?: number) {
+	const rows = db
+		.select({ exerciseId: sessionSets.exerciseId, reps: sessionSets.reps, weightKg: sessionSets.weightKg })
+		.from(sessionSets)
+		.where(
+			excludeSessionId
+				? and(eq(sessionSets.isWarmup, false), ne(sessionSets.sessionId, excludeSessionId))
+				: eq(sessionSets.isWarmup, false)
+		)
+		.all();
+	const best = new Map<number, number>();
+	for (const r of rows) {
+		const v = e1rm(r.weightKg, r.reps);
+		if (v > (best.get(r.exerciseId) ?? 0)) best.set(r.exerciseId, v);
+	}
+	return best;
+}
 
 // ---------- workout templates ----------
 export type WorkoutExerciseInput = {
@@ -110,10 +223,14 @@ export function startSession(input: {
 	source?: string;
 	bodyweightKg?: number | null;
 	readinessScore?: number | null;
+	clientId?: string | null;
+	startedAt?: number | null; // epoch ms
 }) {
 	return db
 		.insert(sessions)
 		.values({
+			clientId: input.clientId ?? null,
+			...(input.startedAt ? { startedAt: new Date(input.startedAt) } : {}),
 			workoutId: input.workoutId ?? null,
 			name: input.name ?? 'Workout',
 			source: input.source ?? 'web',
@@ -124,7 +241,14 @@ export function startSession(input: {
 		.get();
 }
 
+export const findSessionByClientId = (clientId: string) =>
+	db.select().from(sessions).where(eq(sessions.clientId, clientId)).get();
+
+export const findSetByClientId = (clientId: string) =>
+	db.select().from(sessionSets).where(eq(sessionSets.clientId, clientId)).get();
+
 export type SetInput = {
+	clientId?: string | null;
 	exerciseId: number;
 	setIndex?: number;
 	supersetGroup?: number | null;
@@ -139,10 +263,11 @@ export type SetInput = {
 };
 
 export function addSet(sessionId: number, input: SetInput) {
-	return db.transaction((tx) => {
+	const set = db.transaction((tx) => {
 		const set = tx
 			.insert(sessionSets)
 			.values({
+				clientId: input.clientId ?? null,
 				sessionId,
 				exerciseId: input.exerciseId,
 				setIndex: input.setIndex ?? 0,
@@ -171,6 +296,38 @@ export function addSet(sessionId: number, input: SetInput) {
 		}
 		return set;
 	});
+	recomputeIfFinished(sessionId);
+	return set;
+}
+
+export function updateSet(
+	sessionId: number,
+	setId: number,
+	patch: { reps?: number; weightKg?: number; rpe?: number | null; isWarmup?: boolean }
+) {
+	const row = db
+		.update(sessionSets)
+		.set(patch)
+		.where(and(eq(sessionSets.id, setId), eq(sessionSets.sessionId, sessionId)))
+		.returning()
+		.get();
+	if (row) recomputeIfFinished(sessionId);
+	return row ?? null;
+}
+
+export function deleteSet(sessionId: number, setId: number) {
+	const res = db
+		.delete(sessionSets)
+		.where(and(eq(sessionSets.id, setId), eq(sessionSets.sessionId, sessionId)))
+		.run();
+	if (res.changes) recomputeIfFinished(sessionId);
+	return res.changes > 0;
+}
+
+/** Sets can change after finish (late watch sync, edits) — keep cached rollups true. */
+function recomputeIfFinished(sessionId: number) {
+	const s = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+	if (s?.endedAt) db.update(sessions).set(rollups(s, s.endedAt)).where(eq(sessions.id, sessionId)).run();
 }
 
 /** Finalize a session: stamp endedAt and cache tonnage + kcal rollups. */
@@ -180,12 +337,28 @@ export function finishSession(id: number, patch?: { notes?: string; bodyweightKg
 	// Idempotent: a duplicate /finish (client retry) must not restamp endedAt —
 	// that would recompute duration to "now" and inflate the kcal estimate.
 	if (s.endedAt) return s;
+	const bw = patch?.bodyweightKg ?? s.bodyweightKg ?? 80;
+	const endedAt = new Date();
+	return db
+		.update(sessions)
+		.set({
+			endedAt,
+			...rollups({ ...s, bodyweightKg: bw }, endedAt),
+			bodyweightKg: bw,
+			notes: patch?.notes ?? s.notes
+		})
+		.where(eq(sessions.id, id))
+		.returning()
+		.get();
+}
+
+function rollups(s: typeof sessions.$inferSelect, endedAt: Date) {
+	const id = s.id;
 	const sets = db.select().from(sessionSets).where(eq(sessionSets.sessionId, id)).all();
 	const working = sets.filter((x) => !x.isWarmup);
 	const totalVolumeKg = tonnage(working);
 
-	const bw = patch?.bodyweightKg ?? s.bodyweightKg ?? 80;
-	const endedAt = new Date();
+	const bw = s.bodyweightKg ?? 80;
 	const started = s.startedAt ?? endedAt;
 	const totalMin = Math.max(1, (endedAt.getTime() - started.getTime()) / 60000);
 
@@ -202,19 +375,7 @@ export function finishSession(id: number, patch?: { notes?: string; bodyweightKg
 	});
 	const restMin = Math.max(0, totalMin - activeMin);
 	const estimatedKcal = estimateKcal(workingForKcal, restMin, bw);
-
-	return db
-		.update(sessions)
-		.set({
-			endedAt,
-			totalVolumeKg,
-			estimatedKcal,
-			bodyweightKg: bw,
-			notes: patch?.notes ?? s.notes
-		})
-		.where(eq(sessions.id, id))
-		.returning()
-		.get();
+	return { totalVolumeKg, estimatedKcal };
 }
 
 export const listSessions = (limit = 30) =>
@@ -344,3 +505,75 @@ export function healthkitPayload(id: number) {
 		}
 	};
 }
+
+// ---------- settings (single row) ----------
+export type Units = 'lb' | 'kg';
+export type AppSettings = {
+	units: Units;
+	voiceCount: boolean;
+	restAlarmSnoozeSec: number;
+	profile: Record<string, unknown> | null;
+};
+
+export function getSettings(): AppSettings {
+	const row = db.select().from(settings).where(eq(settings.id, 1)).get();
+	return {
+		units: row?.units === 'kg' ? 'kg' : 'lb',
+		voiceCount: row?.voiceCount ?? true,
+		restAlarmSnoozeSec: row?.restAlarmSnoozeSec ?? 60,
+		profile: row?.profile ?? null
+	};
+}
+
+export function patchSettings(patch: Partial<AppSettings>) {
+	const next = { ...getSettings(), ...patch };
+	const row = { id: 1, ...next, updatedAt: new Date() };
+	db.insert(settings).values(row).onConflictDoUpdate({ target: settings.id, set: row }).run();
+	return next;
+}
+
+// ---------- rep-counter calibration ----------
+export const listCalibration = () => db.select().from(calibration).all();
+
+export function putCalibration(exerciseId: number, params: Record<string, unknown>, samples: number) {
+	const row = { exerciseId, params, samples, updatedAt: new Date() };
+	return db
+		.insert(calibration)
+		.values(row)
+		.onConflictDoUpdate({ target: calibration.exerciseId, set: row })
+		.returning()
+		.get();
+}
+
+// ---------- raw motion traces ----------
+export function addMotionTrace(input: {
+	exerciseId: number;
+	setClientId?: string | null;
+	sampleHz: number;
+	detectedReps: number;
+	actualReps: number;
+	params?: Record<string, unknown> | null;
+	samples: unknown[];
+}) {
+	return db
+		.insert(motionTraces)
+		.values({ ...input, setClientId: input.setClientId ?? null, params: input.params ?? null, samples: JSON.stringify(input.samples) })
+		.returning({ id: motionTraces.id })
+		.get();
+}
+
+export const listMotionTraces = (exerciseId?: number) =>
+	db
+		.select({
+			id: motionTraces.id,
+			exerciseId: motionTraces.exerciseId,
+			setClientId: motionTraces.setClientId,
+			sampleHz: motionTraces.sampleHz,
+			detectedReps: motionTraces.detectedReps,
+			actualReps: motionTraces.actualReps,
+			createdAt: motionTraces.createdAt
+		})
+		.from(motionTraces)
+		.where(exerciseId ? eq(motionTraces.exerciseId, exerciseId) : undefined)
+		.orderBy(desc(motionTraces.createdAt))
+		.all();

@@ -36,7 +36,22 @@ export const POST: RequestHandler = async ({ request }) => {
 		source?: string;
 		bodyweightKg?: number | null;
 		readinessScore?: number | null;
+		clientId?: string;
+		startedAt?: number;
 	} = {};
+
+	if (b.clientId !== undefined && b.clientId !== null) {
+		if (typeof b.clientId !== 'string' || !b.clientId) throw error(400, 'clientId must be a string');
+		input.clientId = b.clientId;
+		// Offline clients retry: same clientId → the session we already made.
+		const existing = repo.findSessionByClientId(b.clientId);
+		if (existing) return json(existing, { status: 200 });
+	}
+	if (b.startedAt !== undefined && b.startedAt !== null) {
+		if (typeof b.startedAt !== 'number' || !Number.isFinite(b.startedAt))
+			throw error(400, 'startedAt must be epoch ms');
+		input.startedAt = b.startedAt;
+	}
 
 	if (b.workoutId !== undefined && b.workoutId !== null) {
 		if (typeof b.workoutId !== 'number') throw error(400, 'workoutId must be a number');

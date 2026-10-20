@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { num, dur, dateTime, kg } from '$lib/ui';
+	import { num, dur, dateTime } from '$lib/ui';
+	import { vol, units } from '$lib/units.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	// group by month for a light timeline feel
 	function monthKey(d: string | number | Date) {
-		return new Date(d).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+		return new Date(d).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 	}
 	const grouped = $derived.by(() => {
 		const out: { month: string; items: PageData['sessions'] }[] = [];
@@ -43,8 +44,8 @@
 					</div>
 					<div class="flex shrink-0 gap-4 text-right tabular-nums">
 						<div>
-							<div class="text-sm font-bold text-accent">{num(s.totalVolumeKg)}</div>
-							<div class="text-[10px] uppercase tracking-wide text-zinc-600">kg</div>
+							<div class="text-sm font-bold text-accent">{vol(s.totalVolumeKg).split(' ')[0]}</div>
+							<div class="text-[10px] uppercase tracking-wide text-zinc-600">{units()}</div>
 						</div>
 						<div>
 							<div class="text-sm font-bold">{num(s.estimatedKcal)}</div>

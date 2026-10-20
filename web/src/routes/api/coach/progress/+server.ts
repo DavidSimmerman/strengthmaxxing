@@ -1,8 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { and, desc, eq } from 'drizzle-orm';
-import { db } from '$lib/db';
-import { sessionSets } from '$lib/db/schema';
+import { lastTopSet } from '$lib/server/coach';
 import * as repo from '$lib/server/repo';
 import type { RequestHandler } from './$types';
 
@@ -23,17 +21,6 @@ function todayIso(): string {
 	const m = String(d.getMonth() + 1).padStart(2, '0');
 	const day = String(d.getDate()).padStart(2, '0');
 	return `${y}-${m}-${day}`;
-}
-
-// Most recent performed (non-warmup) set for a given exercise, across all sessions.
-function lastPerformedSet(exerciseId: number) {
-	return db
-		.select({ weightKg: sessionSets.weightKg, reps: sessionSets.reps })
-		.from(sessionSets)
-		.where(and(eq(sessionSets.exerciseId, exerciseId), eq(sessionSets.isWarmup, false)))
-		.orderBy(desc(sessionSets.completedAt))
-		.limit(1)
-		.get();
 }
 
 // POST /api/coach/progress body {workoutId,date?} → assembles context, forwards to agent /progress
@@ -59,14 +46,10 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 	}
 	if (!workout) throw error(404, 'workout not found');
 
-	// Per-exercise: last performed weight/reps.
+	// Per-exercise: the top set (best e1RM) of the last session that included it — not merely
+	// the latest set, which is often a lighter back-off set.
 	const exercises = workout.exercises.map((we) => {
-		let last: { weightKg: number; reps: number } | undefined;
-		try {
-			last = lastPerformedSet(we.exerciseId);
-		} catch {
-			last = undefined;
-		}
+		const last = lastTopSet(we.exerciseId);
 		return {
 			name: we.exercise.name,
 			lastWeightKg: last?.weightKg ?? null,
@@ -87,6 +70,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 	const payload = {
 		workout: { name: workout.name, exercises },
 		readiness: readinessRow?.score ?? null,
+		units: repo.getSettings().units,
 		context: {
 			timeOfDay: TIME_OF_DAY(new Date().getHours()),
 			kcalBalance: readinessRow?.kcalBalance ?? null,

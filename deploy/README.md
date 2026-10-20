@@ -21,14 +21,20 @@ Deploy both services from the single compose file.
    `agent/`.)
 3. **Environment variables** (Coolify → Environment): copy from
    [`../.env.example`](../.env.example) and fill in:
-   - `API_TOKEN` — required in prod. Generate: `openssl rand -hex 32`.
+   - `API_TOKEN` — required in prod. Generate: `openssl rand -hex 32`. The
+     iPhone and Watch send this.
+   - `DASHBOARD_PASSWORD` — what you type to sign in to the dashboard in a
+     browser. Blank = reuse `API_TOKEN`.
    - `DB_PATH` — leave as `/data/strengthmaxxing.db` (inside the volume).
    - `AGENT_URL` — leave as `http://agent:8787`.
    - `ANTHROPIC_API_KEY` — optional (see "Coach auth" below).
    - `AGENT_MODEL` — optional model override.
    Mark `API_TOKEN` and `ANTHROPIC_API_KEY` as **secrets**.
-4. **Domain**: assign your domain to the **web** service (container port 3000).
-   Leave **agent** with no domain — it must stay internal.
+4. **Domain**: assign `https://strengthmaxxing.simmerman.tech` to the **web**
+   service (container port 3000). Leave **agent** with no domain — it must stay
+   internal. Don't put Cloudflare Access (or any login page) in front of `/api/*`:
+   the Watch can't get past a browser login. The app's own password + token
+   protect everything.
 5. Deploy. First boot runs SQLite migrations automatically (web's
    `hooks.server.ts`).
 
