@@ -36,8 +36,17 @@ enum APIError: LocalizedError {
 /// independent, so we don't need actor isolation here. Config (base URL + token) is
 /// snapshotted from `AppSettings` on the main actor for each request, so no mutable UI
 /// state ever crosses concurrency domains.
-final class APIClient: Sendable {
+final class APIClient: @unchecked Sendable {
     static let shared = APIClient()
+
+    /// Short timeouts: the watch is often offline and the outbox retries anyway.
+    static func defaultSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }
 
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -47,7 +56,7 @@ final class APIClient: Sendable {
     private let configProvider: @Sendable () async -> APIConfig
 
     init(
-        session: URLSession = .shared,
+        session: URLSession = APIClient.defaultSession(),
         configProvider: @escaping @Sendable () async -> APIConfig = { await AppSettings.shared.apiConfig }
     ) {
         self.session = session
@@ -91,7 +100,7 @@ final class APIClient: Sendable {
         if !config.token.isEmpty {
             req.setValue("Bearer \(config.token)", forHTTPHeaderField: "Authorization")
         }
-        req.timeoutInterval = 30
+        req.timeoutInterval = 15
         return req
     }
 
@@ -125,6 +134,26 @@ final class APIClient: Sendable {
         }
     }
 
+    /// Returns the raw body (used to cache GET responses on disk for offline use).
+    private func sendRaw(_ req: URLRequest) async throws -> Data {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw APIError.transport(error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.http(status: -1, message: "No HTTP response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = try? decoder.decode(APIErrorBody.self, from: data)
+            throw APIError.http(status: http.statusCode,
+                                message: body?.message ?? body?.error ?? String(data: data, encoding: .utf8) ?? "Unknown error")
+        }
+        return data
+    }
+
     private func encode<B: Encodable>(_ body: B) throws -> Data {
         do { return try encoder.encode(body) }
         catch { throw APIError.decoding(error) }
@@ -150,6 +179,11 @@ final class APIClient: Sendable {
         try await send(try await request("POST", "/api/workouts", body: encode(body)), as: Workout.self)
     }
 
+    /// Raw `GET /api/workouts` JSON, so the watch can cache it and start offline.
+    func getWorkoutsData() async throws -> Data {
+        try await sendRaw(try await request("GET", "/api/workouts"))
+    }
+
     // Sessions
     func getSessions(limit: Int = 30) async throws -> [Session] {
         let q = [URLQueryItem(name: "limit", value: String(limit))]
@@ -160,17 +194,41 @@ final class APIClient: Sendable {
         try await send(try await request("GET", "/api/sessions/\(id)"), as: Session.self)
     }
 
+    /// Idempotent when `body.clientId` is set (server returns the existing session).
     func startSession(_ body: CreateSessionBody) async throws -> Session {
         try await send(try await request("POST", "/api/sessions", body: encode(body)), as: Session.self)
     }
 
-    /// Posts one completed set (used heavily by the watch).
+    /// Like `startSession` but only needs `{id}` back (outbox; tolerant of response changes).
+    func startSessionId(_ body: CreateSessionBody) async throws -> Int {
+        try await send(try await request("POST", "/api/sessions", body: encode(body)), as: IdOnly.self).id
+    }
+
+    /// Posts one completed set. Idempotent when `body.clientId` is set.
     @discardableResult
     func postSet(sessionId: Int, _ body: CreateSetBody) async throws -> WorkoutSet {
         try await send(
             try await request("POST", "/api/sessions/\(sessionId)/sets", body: encode(body)),
             as: WorkoutSet.self
         )
+    }
+
+    /// Same as `postSet` but ignores the response body (outbox).
+    func postSetIgnoringResponse(sessionId: Int, _ body: CreateSetBody) async throws {
+        _ = try await sendRaw(try await request("POST", "/api/sessions/\(sessionId)/sets", body: encode(body)))
+    }
+
+    /// v2: edit a logged set.
+    func updateSet(sessionId: Int, setId: Int, _ body: UpdateSetBody) async throws -> WorkoutSet {
+        try await send(
+            try await request("PATCH", "/api/sessions/\(sessionId)/sets/\(setId)", body: encode(body)),
+            as: WorkoutSet.self
+        )
+    }
+
+    /// v2: delete a logged set (204).
+    func deleteSet(sessionId: Int, setId: Int) async throws {
+        _ = try await sendRaw(try await request("DELETE", "/api/sessions/\(sessionId)/sets/\(setId)"))
     }
 
     /// Finalizes a session; response carries totalVolumeKg + estimatedKcal for HealthKit.
@@ -181,8 +239,36 @@ final class APIClient: Sendable {
         )
     }
 
+    func finishSessionIgnoringResponse(id: Int, _ body: FinishSessionBody) async throws {
+        _ = try await sendRaw(try await request("POST", "/api/sessions/\(id)/finish", body: encode(body)))
+    }
+
     func deleteSession(id: Int) async throws {
-        _ = try await send(try await request("DELETE", "/api/sessions/\(id)"), as: EmptyResponse.self)
+        _ = try await sendRaw(try await request("DELETE", "/api/sessions/\(id)"))
+    }
+
+    // Settings (v2)
+    func getSettings() async throws -> ServerSettings {
+        try await send(try await request("GET", "/api/settings"), as: ServerSettings.self)
+    }
+
+    @discardableResult
+    func patchSettings(_ body: SettingsPatch) async throws -> ServerSettings {
+        try await send(try await request("PATCH", "/api/settings", body: encode(body)), as: ServerSettings.self)
+    }
+
+    // Calibration (v2)
+    func getCalibration() async throws -> [RemoteCalibration] {
+        try await send(try await request("GET", "/api/calibration"), as: [RemoteCalibration].self)
+    }
+
+    func putCalibration(exerciseId: Int, _ body: CalibrationPutBody) async throws {
+        _ = try await sendRaw(try await request("PUT", "/api/calibration/\(exerciseId)", body: encode(body)))
+    }
+
+    // Motion traces (v2) — body is pre-encoded MotionTraceBody JSON.
+    func postMotionTrace(json: Data) async throws {
+        _ = try await sendRaw(try await request("POST", "/api/motion-traces", body: json))
     }
 
     /// Optional: server-built HealthKit payload. We tolerate its absence.
@@ -202,3 +288,23 @@ final class APIClient: Sendable {
 
 /// Sentinel for endpoints with no meaningful body (e.g. DELETE).
 struct EmptyResponse: Decodable {}
+
+private struct IdOnly: Decodable { let id: Int }
+
+/// `PATCH /api/settings` body (any subset).
+struct SettingsPatch: Encodable, Sendable {
+    var units: WeightUnit? = nil
+    var voiceCount: Bool? = nil
+    var restAlarmSnoozeSec: Int? = nil
+}
+
+extension APIError {
+    /// Retrying can never succeed (validation / not found / conflict / too large).
+    /// Auth errors are NOT permanent — the user may fix the token later.
+    var isPermanent: Bool {
+        if case let .http(status, _) = self {
+            return (400..<500).contains(status) && ![401, 403, 408, 425, 429].contains(status)
+        }
+        return false
+    }
+}

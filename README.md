@@ -55,6 +55,20 @@ to see History/Reports populated? Run:
 cd web && node --experimental-strip-types scripts/demo-seed.mjs
 ```
 
+## Checks
+
+With the web app running (`ORIGIN=http://127.0.0.1:3000` if you run the built server over http):
+
+```sh
+cd web
+PORT=4399 node scripts/fake-agent.mjs &          # stand-in coach, no Claude calls
+node scripts/smoke.mjs  <url> <API_TOKEN>         # original end-to-end flow
+node scripts/v2-check.mjs <url> <API_TOKEN> <DASHBOARD_PASSWORD>   # login, lbs, sync, edits, coach
+```
+
+On a Mac: `cd ios && swift test` runs the rep counter, calibrator, rest alarm, units and
+offline-queue tests.
+
 ## Deploy
 
 See [`deploy/README.md`](deploy/README.md) for the Coolify / Docker Compose

@@ -2,8 +2,8 @@
 //  SettingsView.swift
 //  StrengthMaxxing iOS
 //
-//  Server URL + API token (stored in Keychain), bodyweight, HealthKit status, and a
-//  connectivity test.
+//  Server URL + API token (Keychain) — pushed to the Apple Watch automatically — plus
+//  units (shared with the dashboard via /api/settings), bodyweight, HealthKit status.
 //
 
 import SwiftUI
@@ -11,38 +11,55 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var health: HealthKitManager
+    @ObservedObject private var sync = SyncService.shared
     @State private var pingState: PingState = .idle
+    @State private var watchStatus: String?
 
     enum PingState: Equatable {
         case idle, testing, ok, failed(String)
+    }
+
+    private var bodyweightBinding: Binding<Double> {
+        Binding(
+            get: { Units.displayRounded(kg: settings.bodyweightKg, unit: settings.units) },
+            set: { settings.bodyweightKg = Units.toKg($0, unit: settings.units) }
+        )
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("https://your-server:3000", text: $settings.baseURLString)
+                    TextField(AppSettings.defaultBaseURL, text: $settings.baseURLString)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    SecureField("API token (optional)", text: $settings.token)
+                    SecureField("API token", text: $settings.token)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Button("Send to Apple Watch") { pushToWatch(force: true) }
+                    if let watchStatus {
+                        Text(watchStatus).font(.caption).foregroundStyle(.secondary)
+                    }
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The base URL of your strengthmaxxing web app. The token is required only if the server has API_TOKEN set. Stored securely in the Keychain.")
+                    Text("Changes are sent to your Apple Watch automatically. The token is stored in the Keychain.")
                 }
 
-                Section("Profile") {
+                Section("Units & profile") {
+                    Picker("Weight units", selection: $settings.units) {
+                        Text("Pounds (lb)").tag(WeightUnit.lb)
+                        Text("Kilograms (kg)").tag(WeightUnit.kg)
+                    }
                     HStack {
                         Text("Bodyweight")
                         Spacer()
-                        TextField("kg", value: $settings.bodyweightKg, format: .number)
+                        TextField(settings.units.symbol, value: bodyweightBinding, format: .number)
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
-                        Text("kg").foregroundStyle(.secondary)
+                        Text(settings.units.symbol).foregroundStyle(.secondary)
                     }
                 }
 
@@ -64,6 +81,9 @@ struct SettingsView: View {
                     if case .failed(let msg) = pingState {
                         Text(msg).font(.caption).foregroundStyle(.red)
                     }
+                    if sync.pendingCount > 0 {
+                        LabeledContent("Waiting to sync", value: "\(sync.pendingCount)")
+                    }
                 }
 
                 Section {
@@ -82,10 +102,24 @@ struct SettingsView: View {
                 } header: {
                     Text("Apple Health")
                 } footer: {
-                    Text("Finished workouts are written to Apple Fitness as Traditional Strength Training, including active energy from your session.")
+                    Text("Workouts finished on iPhone are written to Apple Fitness. Workouts run on the watch are saved by the watch.")
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: settings.baseURLString) { pushToWatch(force: false) }
+            .onChange(of: settings.token) { pushToWatch(force: false) }
+            .onChange(of: settings.units) { _, units in
+                Task { try? await APIClient.shared.patchSettings(SettingsPatch(units: units)) }
+            }
+        }
+    }
+
+    private func pushToWatch(force: Bool) {
+        switch SettingsSync.shared.pushCurrent(force: force) {
+        case .sent: watchStatus = force ? "Sent to watch." : nil
+        case .noWatch: watchStatus = force ? "No paired watch with the app installed." : nil
+        case .notReady: watchStatus = "Watch connection not ready yet."
+        case .failed(let msg): watchStatus = "Couldn't send: \(msg)"
         }
     }
 

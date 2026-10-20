@@ -97,19 +97,23 @@ struct CreateWorkoutBody: Codable {
 // MARK: - Sessions
 
 /// `POST /api/sessions` body.
-struct CreateSessionBody: Codable {
+struct CreateSessionBody: Codable, Sendable {
     let workoutId: Int?
     let name: String?
     /// e.g. "ios", "watch". Free-form per contract.
     let source: String?
     let bodyweightKg: Double?
     let readinessScore: Int?
+    /// v2: idempotency key (UUID string). Same clientId ⇒ server returns the existing session.
+    var clientId: String? = nil
+    /// v2: epoch ms — when the session really started (it may be posted later, offline).
+    var startedAt: Int64? = nil
 }
 
 /// A single recorded rep event within a set.
 ///
 /// `offsetMs` is milliseconds from the set's FIRST rep (so rep 0 is always 0).
-struct RepEvent: Codable, Hashable {
+struct RepEvent: Codable, Hashable, Sendable {
     let repIndex: Int
     let offsetMs: Int
     /// Optional concentric (lifting-phase) duration in ms if measured.
@@ -123,10 +127,14 @@ struct RepEvent: Codable, Hashable {
 }
 
 /// `POST /api/sessions/:id/sets` body — this is what the watch posts per completed set.
-struct CreateSetBody: Codable {
+///
+/// Encoded by hand so optional fields go out as explicit `null` (contract: "clients send
+/// `null` unless the user actually set it") rather than being omitted.
+struct CreateSetBody: Codable, Sendable {
     let exerciseId: Int
     let setIndex: Int
     let supersetGroup: Int?
+    /// Must be ≥ 1 — a 0-rep set is "skipped" and never posted.
     let reps: Int
     let weightKg: Double
     let rpe: Double?
@@ -137,6 +145,37 @@ struct CreateSetBody: Codable {
     /// epoch ms
     let completedAt: Int64
     let repEvents: [RepEvent]
+    /// v2: idempotency key (UUID string).
+    var clientId: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case exerciseId, setIndex, supersetGroup, reps, weightKg, rpe, isWarmup
+        case restSecActual, startedAt, completedAt, repEvents, clientId
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(exerciseId, forKey: .exerciseId)
+        try c.encode(setIndex, forKey: .setIndex)
+        try c.encode(supersetGroup, forKey: .supersetGroup)   // Optional → null
+        try c.encode(reps, forKey: .reps)
+        try c.encode(weightKg, forKey: .weightKg)
+        try c.encode(rpe, forKey: .rpe)                       // Optional → null
+        try c.encode(isWarmup, forKey: .isWarmup)
+        try c.encode(restSecActual, forKey: .restSecActual)   // Optional → null
+        try c.encode(startedAt, forKey: .startedAt)
+        try c.encode(completedAt, forKey: .completedAt)
+        try c.encode(repEvents, forKey: .repEvents)
+        try c.encodeIfPresent(clientId, forKey: .clientId)
+    }
+}
+
+/// `PATCH /api/sessions/:id/sets/:setId` body (any subset).
+struct UpdateSetBody: Codable, Sendable {
+    var reps: Int? = nil
+    var weightKg: Double? = nil
+    var rpe: Double? = nil
+    var isWarmup: Bool? = nil
 }
 
 /// A recorded set as returned within a session (`GET /api/sessions/:id`).
@@ -161,8 +200,8 @@ struct WorkoutSet: Decodable, Identifiable, Hashable {
     /// them as strings (epoch ms is only used in the POST body direction).
     let startedAt: String?
     let completedAt: String?
-    /// Joined exercise.
-    let exercise: Exercise?
+    /// Joined exercise (var so a PATCH response without the join can keep it).
+    var exercise: Exercise?
     /// Joined per-rep timing events, if present.
     let repEvents: [RepEvent]?
 
@@ -242,9 +281,64 @@ struct Session: Decodable, Identifiable, Hashable {
 }
 
 /// `POST /api/sessions/:id/finish` body.
-struct FinishSessionBody: Codable {
+struct FinishSessionBody: Codable, Sendable {
     let notes: String?
     let bodyweightKg: Double?
+}
+
+// MARK: - Settings (v2)
+
+/// `GET /api/settings` — shared by dashboard, phone and watch. Missing keys → defaults.
+struct ServerSettings: Codable, Equatable, Sendable {
+    var units: WeightUnit = .lb
+    var voiceCount: Bool = true
+    var restAlarmSnoozeSec: Int = 60
+
+    init(units: WeightUnit = .lb, voiceCount: Bool = true, restAlarmSnoozeSec: Int = 60) {
+        self.units = units
+        self.voiceCount = voiceCount
+        self.restAlarmSnoozeSec = restAlarmSnoozeSec
+    }
+
+    enum CodingKeys: String, CodingKey { case units, voiceCount, restAlarmSnoozeSec }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        units = (try? c.decodeIfPresent(WeightUnit.self, forKey: .units)) ?? .lb
+        voiceCount = (try? c.decodeIfPresent(Bool.self, forKey: .voiceCount)) ?? true
+        restAlarmSnoozeSec = (try? c.decodeIfPresent(Int.self, forKey: .restAlarmSnoozeSec)) ?? 60
+    }
+}
+
+// MARK: - Motion traces (v2)
+
+/// `POST /api/motion-traces` body. `samples` rows are
+/// `[tMs, ax, ay, az, gx, gy, gz, rx, ry, rz]` with tMs relative to the first sample.
+struct MotionTraceBody: Codable, Sendable {
+    let exerciseId: Int
+    let setClientId: String?
+    let sampleHz: Double
+    let detectedReps: Int
+    let actualReps: Int
+    let params: RepCounterParams?
+    let samples: [[Double]]
+
+    /// Builds the body, rounding values (4 dp, ms for time) to keep it well under 4 MB.
+    init(exerciseId: Int, setClientId: String?, sampleHz: Double, detectedReps: Int,
+         actualReps: Int, params: RepCounterParams?, motion: [MotionSample]) {
+        self.exerciseId = exerciseId
+        self.setClientId = setClientId
+        self.sampleHz = sampleHz
+        self.detectedReps = detectedReps
+        self.actualReps = actualReps
+        self.params = params
+        let t0 = motion.first?.t ?? 0
+        func r(_ v: Double) -> Double { (v * 10_000).rounded() / 10_000 }
+        self.samples = motion.map { m in
+            [((m.t - t0) * 1000).rounded(), r(m.ax), r(m.ay), r(m.az), r(m.gx), r(m.gy), r(m.gz),
+             r(m.rx), r(m.ry), r(m.rz)]
+        }
+    }
 }
 
 // MARK: - HealthKit payload

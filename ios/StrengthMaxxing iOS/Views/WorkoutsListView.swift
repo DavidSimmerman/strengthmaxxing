@@ -23,8 +23,7 @@ final class WorkoutsListViewModel: ObservableObject {
     func load() async {
         state = .loading
         do {
-            let workouts = try await api.getWorkouts().filter { $0.archived != true }
-            state = .loaded(workouts)
+            state = .loaded(try await SyncService.shared.refreshWorkouts())
         } catch {
             state = .failed((error as? APIError)?.errorDescription ?? error.localizedDescription)
         }
@@ -93,12 +92,15 @@ struct WorkoutsListView: View {
     private func start(_ workout: Workout) async {
         vm.startingWorkoutId = workout.id
         defer { vm.startingWorkoutId = nil }
+        let clientId = UUID().uuidString
         let body = CreateSessionBody(
             workoutId: workout.id,
             name: workout.name,
             source: "ios",
             bodyweightKg: settings.bodyweightKg,
-            readinessScore: nil
+            readinessScore: nil,
+            clientId: clientId,     // idempotent: a retry can't create a duplicate session
+            startedAt: Int64(Date().timeIntervalSince1970 * 1000)
         )
         do {
             let session = try await APIClient.shared.startSession(body)

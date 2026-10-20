@@ -2,21 +2,19 @@
 //  AppSettings.swift
 //  StrengthMaxxing (shared)
 //
-//  Stores the server base URL (UserDefaults) and the bearer API token (Keychain).
-//  Observable so SwiftUI settings views update live.
+//  Server URL (UserDefaults) + API token (Keychain) + display/workout preferences.
 //
-//  NOTE: this type is shared by the iOS and watchOS targets. When the watch talks to
-//  the API directly (our chosen approach — see README), each device keeps its own copy;
-//  the token is entered once per device. If you'd rather push the token from phone →
-//  watch, wire up WatchConnectivity (see README "WatchConnectivity note").
+//  - The phone pushes URL + token to the watch over WatchConnectivity (SettingsSync); the
+//    watch's own Settings screen can still override them (latest change wins).
+//  - units / voiceCount / restAlarmSnoozeSec mirror `GET /api/settings` and are cached
+//    here so the watch works offline. A watch-side voice toggle sticks over the server value.
 //
 
 import Foundation
 import Combine
 import Security
 
-/// Immutable, Sendable snapshot of the config an API request needs. Taken on the main
-/// actor and handed to the (non-isolated) APIClient so no mutable UI state crosses actors.
+/// Immutable, Sendable snapshot of the config an API request needs.
 struct APIConfig: Sendable {
     let baseURL: URL?
     let token: String
@@ -24,18 +22,24 @@ struct APIConfig: Sendable {
 
 @MainActor
 final class AppSettings: ObservableObject {
-    /// `nonisolated` so the singleton instance can be *obtained* from any context; its
-    /// mutable properties are still main-actor-isolated and require `await` to read/write.
-    nonisolated(unsafe) static let shared = AppSettings()
+    /// Main-actor isolated (created lazily on first main-actor access). Off-main code
+    /// uses `await AppSettings.shared.apiConfig`.
+    static let shared = AppSettings()
+
+    static let defaultBaseURL = "https://strengthmaxxing.simmerman.tech"
 
     private enum Keys {
         static let baseURL = "sm.baseURL"
         static let bodyweightKg = "sm.bodyweightKg"
+        static let units = "sm.units"
+        static let voiceCount = "sm.voiceCount"
+        static let voiceLocal = "sm.voiceCount.local"
+        static let snooze = "sm.restAlarmSnoozeSec"
+        static let recordMotion = "sm.recordMotion"
     }
 
-    /// Suite shared with a possible App Group. If you add an App Group entitlement
-    /// (e.g. "group.tech.simmerman.strengthmaxxing") the two targets can share defaults.
     private let defaults: UserDefaults
+    private var applyingServer = false
 
     @Published var baseURLString: String {
         didSet { defaults.set(baseURLString, forKey: Keys.baseURL) }
@@ -46,56 +50,97 @@ final class AppSettings: ObservableObject {
         didSet { Keychain.set(token, for: Keychain.tokenKey) }
     }
 
-    /// Default bodyweight used when starting sessions / writing HealthKit for bodyweight math.
+    /// Always kg (converted for display).
     @Published var bodyweightKg: Double {
         didSet { defaults.set(bodyweightKg, forKey: Keys.bodyweightKg) }
     }
 
+    @Published var units: WeightUnit {
+        didSet { defaults.set(units.rawValue, forKey: Keys.units) }
+    }
+
+    /// Speak each rep number on the watch.
+    @Published var voiceCount: Bool {
+        didSet {
+            defaults.set(voiceCount, forKey: Keys.voiceCount)
+            if !applyingServer { defaults.set(true, forKey: Keys.voiceLocal) }
+        }
+    }
+
+    @Published var restAlarmSnoozeSec: Int {
+        didSet { defaults.set(restAlarmSnoozeSec, forKey: Keys.snooze) }
+    }
+
+    /// Upload raw motion for every set (not just corrected ones) to help tune the counter.
+    @Published var recordMotion: Bool {
+        didSet { defaults.set(recordMotion, forKey: Keys.recordMotion) }
+    }
+
     private init() {
-        // Fall back to standard defaults if no App Group is configured.
-        let d = UserDefaults(suiteName: "group.tech.simmerman.strengthmaxxing") ?? .standard
+        let d = UserDefaults.standard
         self.defaults = d
-        self.baseURLString = d.string(forKey: Keys.baseURL) ?? "http://localhost:3000"
+        self.baseURLString = d.string(forKey: Keys.baseURL) ?? AppSettings.defaultBaseURL
         self.token = Keychain.get(Keychain.tokenKey) ?? ""
         let bw = d.double(forKey: Keys.bodyweightKg)
         self.bodyweightKg = bw > 0 ? bw : 80
+        self.units = WeightUnit(rawValue: d.string(forKey: Keys.units) ?? "") ?? .lb
+        self.voiceCount = d.object(forKey: Keys.voiceCount) as? Bool ?? true
+        let snooze = d.integer(forKey: Keys.snooze)
+        self.restAlarmSnoozeSec = snooze > 0 ? snooze : 60
+        self.recordMotion = d.object(forKey: Keys.recordMotion) as? Bool ?? true
     }
 
     /// Validated base URL, or nil if the user hasn't entered a usable value.
     var baseURL: URL? {
         let trimmed = baseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
+        guard !trimmed.isEmpty, let url = URL(string: trimmed), url.scheme != nil else { return nil }
         return url
     }
 
     var hasToken: Bool { !token.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    /// A Sendable snapshot for use off the main actor (by APIClient).
     var apiConfig: APIConfig {
         APIConfig(baseURL: baseURL, token: token.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var serverSettings: ServerSettings {
+        ServerSettings(units: units, voiceCount: voiceCount, restAlarmSnoozeSec: restAlarmSnoozeSec)
+    }
+
+    /// Adopt `GET /api/settings`. A voice toggle made on this device wins over the server.
+    func apply(_ s: ServerSettings) {
+        applyingServer = true
+        defer { applyingServer = false }
+        if units != s.units { units = s.units }
+        if !defaults.bool(forKey: Keys.voiceLocal), voiceCount != s.voiceCount { voiceCount = s.voiceCount }
+        if s.restAlarmSnoozeSec > 0, restAlarmSnoozeSec != s.restAlarmSnoozeSec { restAlarmSnoozeSec = s.restAlarmSnoozeSec }
+    }
+
+    /// Connection settings pushed from the phone (WatchConnectivity).
+    func applyFromPhone(baseURL: String?, token: String?) {
+        if let baseURL, !baseURL.isEmpty, baseURL != baseURLString { baseURLString = baseURL }
+        if let token, token != self.token { self.token = token }
     }
 }
 
 // MARK: - Minimal Keychain wrapper
 
-/// Tiny generic-password Keychain helper. Avoids a dependency for a single secret.
 enum Keychain {
     static let tokenKey = "sm.apiToken"
-    /// Change this to your real bundle prefix; must be stable across launches.
+    /// Must be stable across launches.
     private static let service = "tech.simmerman.strengthmaxxing"
 
     @discardableResult
     static func set(_ value: String, for account: String) -> Bool {
-        let data = Data(value.utf8)
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(base as CFDictionary)
-        guard !value.isEmpty else { return true } // empty ⇒ just delete
+        guard !value.isEmpty else { return true }
         var add = base
-        add[kSecValueData as String] = data
+        add[kSecValueData as String] = Data(value.utf8)
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }

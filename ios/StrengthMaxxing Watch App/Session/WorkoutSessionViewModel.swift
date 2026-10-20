@@ -2,19 +2,19 @@
 //  WorkoutSessionViewModel.swift
 //  StrengthMaxxing Watch App
 //
-//  The brain of the watch app. Orchestrates:
-//   - Starting a session (POST /api/sessions).
-//   - Walking the workout template exercise-by-exercise, cycling supersets.
-//   - Auto rep counting (MotionRepSession) during each set.
-//   - Posting each completed set (POST /api/sessions/:id/sets) with repEvents.
-//   - Rest timer + looping haptics AFTER the last exercise of a superset group.
-//   - The live HKWorkoutSession (heart rate / energy).
-//   - Finishing (POST /api/sessions/:id/finish); the watch's live builder saves the
-//     HKWorkout to Health, so no separate write is needed here.
+//  The brain of the watch app.
 //
-//  Superset model (per contract): exercises sharing a `supersetGroup` are cycled with no
-//  rest between them; rest runs only after the last exercise in the group. We pre-compute
-//  an ordered list of "slots"; each slot knows whether rest follows it.
+//   - Works fully offline: the session is created locally (clientId UUID) and every write
+//     goes through the ordered outbox (SyncService). The HKWorkoutSession starts
+//     regardless of network.
+//   - Motion runs for the whole workout. The counter declares a set started after 2
+//     consistent reps — during rest that stops the rest alarm and jumps straight into
+//     counting the next set (already at 2).
+//   - Log Set: 0 reps = skipped (not posted); a corrected count teaches the counter for
+//     that exercise (CalibrationStore); raw motion is queued as a trace when corrected or
+//     when "Record motion" is on.
+//   - Supersets: no rest between members; rest after the last member of each round.
+//   - End Workout at any time finishes with what's logged.
 //
 
 import Foundation
@@ -23,145 +23,217 @@ import Combine
 @MainActor
 final class WorkoutSessionViewModel: ObservableObject {
 
-    // MARK: Phases
-
     enum Phase: Equatable {
         case notStarted
-        case starting
-        case lifting          // motion counting a set
-        case setReview        // set done, confirm/adjust reps before posting
+        case lifting          // counting the current set
+        case setReview        // confirm/adjust reps + weight
         case resting          // rest countdown / alarm
         case finishing
         case finished
-        case error(String)
+    }
+
+    struct LoggedSet: Identifiable {
+        let id = UUID()
+        let exerciseName: String
+        let reps: Int
+        let weightKg: Double
     }
 
     // MARK: Published state
 
     @Published private(set) var phase: Phase = .notStarted
-    @Published private(set) var slots: [WorkoutSlot] = []
-    @Published private(set) var currentIndex: Int = 0
-    @Published private(set) var session: Session?
-    /// Working weight for the current slot (editable on the watch).
+    @Published private(set) var slots: [WorkoutSlot]
+    @Published private(set) var currentIndex = 0
     @Published var currentWeightKg: Double = 0
-    @Published private(set) var lastError: String?
+    @Published private(set) var logged: [LoggedSet] = []
+    @Published private(set) var isLogging = false
+    /// Count shown when the review screen opens.
+    @Published private(set) var reviewReps = 0
 
     // Collaborators.
     let motion = MotionRepSession()
-    let rest = RestTimer()
+    let rest = RestAlarmController()
     let workout = WatchWorkoutSession()
-
-    private let api = APIClient.shared
+    private let voice = VoiceCounter()
     private let settings = AppSettings.shared
-    private let workoutTemplate: Workout
+    private let sync = SyncService.shared
+    private let calibration = CalibrationStore.shared
 
-    // Timing for the in-progress set.
-    private var setStartedAt: Date?
+    let template: Workout
+    let sessionClientId = UUID()
 
-    var currentSlot: WorkoutSlot? {
-        guard slots.indices.contains(currentIndex) else { return nil }
-        return slots[currentIndex]
-    }
-
-    var progressText: String {
-        guard !slots.isEmpty else { return "" }
-        return "\(min(currentIndex + 1, slots.count)) / \(slots.count)"
-    }
+    private var liftingSince = Date()
+    private var setEndedAt = Date()
+    private var lastSetCompletedAt: Date?
+    private var recordingTask: Task<SetRecording, Never>?
+    private var weightsByExercise: [Int: Double] = [:]
 
     init(workout: Workout) {
-        self.workoutTemplate = workout
+        self.template = workout
         self.slots = WorkoutPlanner.buildSlots(from: workout)
+        motion.onEvent = { [weak self] event in self?.handleMotion(event) }
     }
 
-    // MARK: - Lifecycle
+    // MARK: Derived
 
-    func startSession() async {
-        phase = .starting
-        await workout.requestAuthorization()
-        let body = CreateSessionBody(
-            workoutId: workoutTemplate.id,
-            name: workoutTemplate.name,
+    var currentSlot: WorkoutSlot? { slots.indices.contains(currentIndex) ? slots[currentIndex] : nil }
+    var nextSlot: WorkoutSlot? { slots.indices.contains(currentIndex + 1) ? slots[currentIndex + 1] : nil }
+    var unit: WeightUnit { settings.units }
+    var progressText: String { slots.isEmpty ? "" : "\(min(currentIndex + 1, slots.count))/\(slots.count)" }
+    var totalVolumeKg: Double { logged.reduce(0) { $0 + Double($1.reps) * $1.weightKg } }
+
+    func weightText(_ kg: Double) -> String { Units.format(kg: kg, unit: unit) }
+
+    // MARK: Lifecycle
+
+    /// Starts instantly — no network needed.
+    func start() {
+        guard phase == .notStarted, !slots.isEmpty else { return }
+        let startedAt = Date()
+        sync.enqueue(.createSession(clientId: sessionClientId, body: CreateSessionBody(
+            workoutId: template.id,
+            name: template.name,
             source: "watch",
             bodyweightKg: settings.bodyweightKg,
-            readinessScore: nil
-        )
-        do {
-            let created = try await api.startSession(body)
-            self.session = created
-            self.currentIndex = 0
-            self.workout.start()          // live HR/energy
-            beginCurrentSet()
-        } catch {
-            fail(error)
+            readinessScore: nil,
+            clientId: sessionClientId.uuidString,
+            startedAt: Int64(startedAt.timeIntervalSince1970 * 1000)
+        )))
+        voice.enabled = settings.voiceCount
+        motion.start()
+        RestAlarmController.requestNotificationPermission()
+        Task {
+            await workout.requestAuthorization()
+            workout.start()
         }
+        currentIndex = 0
+        beginCurrentSet()
     }
 
-    /// Begin motion counting for the current slot.
-    func beginCurrentSet() {
+    private func beginCurrentSet() {
         guard let slot = currentSlot else { return }
-        currentWeightKg = slot.targetWeightKg ?? currentWeightKg
-        setStartedAt = Date()
-        motion.startSet()
+        currentWeightKg = weightsByExercise[slot.exerciseId] ?? slot.targetWeightKg ?? currentWeightKg
+        motion.setParams(calibration.params(for: slot.exerciseId))
+        liftingSince = Date()
+        if !motion.isSetStarted { voice.reset() }
         phase = .lifting
     }
 
-    /// User taps "Done" — stop counting and review reps.
-    func finishCountingSet() {
-        _ = motion.stopSet()
+    // MARK: Motion events
+
+    private func handleMotion(_ event: RepCounterEvent) {
+        guard phase != .finishing && phase != .finished && phase != .notStarted else { return }
+        switch event {
+        case .setStarted(let n, _):
+            voice.enabled = settings.voiceCount
+            voice.reset()
+            voice.say(n)
+            if phase == .resting {
+                // Next set detected: silence the alarm and go straight into counting.
+                rest.setStarted()
+                advanceToNextSlot()
+            }
+        case .rep(let n, _):
+            voice.say(n)
+        case .setEnded:
+            if phase == .lifting && motion.repCount > 0 { finishCounting() }
+        }
+    }
+
+    // MARK: Set flow
+
+    /// Done tapped (or the counter saw the set end): review the count.
+    func finishCounting() {
+        guard phase == .lifting else { return }
+        setEndedAt = Date()
+        reviewReps = motion.repCount
+        let motion = self.motion
+        recordingTask = Task { await motion.finishSet() }
         phase = .setReview
     }
 
-    /// User confirms reps → post the set, then rest (or straight to next superset partner).
-    func confirmSet(reps: Int, rpe: Double? = nil, isWarmup: Bool = false) async {
-        motion.setCount(reps)
-        guard let slot = currentSlot, let session else { return }
-        let started = setStartedAt ?? Date()
-        let completed = Date()
+    func stepWeight(_ direction: Int) {
+        currentWeightKg = Units.stepped(kg: currentWeightKg, direction: direction,
+                                        category: currentSlot?.exercise?.category, unit: unit)
+    }
+
+    /// Log the reviewed set. `rpe` is nil unless the user turned it on. 0 reps = skipped.
+    func logSet(reps: Int, rpe: Double?, isWarmup: Bool) async {
+        guard phase == .setReview, !isLogging, let slot = currentSlot else { return }
+        isLogging = true
+        defer { isLogging = false }
+
+        let rec = await recordingTask?.value
+        recordingTask = nil
+        guard phase == .setReview else { return }   // ended meanwhile
+
+        if reps > 0 {
+            post(slot: slot, reps: reps, rpe: rpe, isWarmup: isWarmup, recording: rec)
+        }
+        advance(after: slot)
+    }
+
+    private func post(slot: WorkoutSlot, reps: Int, rpe: Double?, isWarmup: Bool, recording rec: SetRecording?) {
+        let detected = rec?.detectedReps ?? 0
+        let startedAt = rec?.firstRepTime.map { wallDate(uptime: $0 - 1.5) } ?? liftingSince
+        let completedAt = rec?.lastRepTime.map { wallDate(uptime: $0 + 0.5) } ?? setEndedAt
+        let restActual = lastSetCompletedAt.map { Int(startedAt.timeIntervalSince($0).rounded()) }
+        let setClientId = UUID().uuidString
 
         let body = CreateSetBody(
-            exerciseId: slot.workoutExercise.exerciseId,
+            exerciseId: slot.exerciseId,
             setIndex: slot.setIndex,
             supersetGroup: slot.supersetGroup,
             reps: reps,
             weightKg: currentWeightKg,
             rpe: rpe,
             isWarmup: isWarmup,
-            restSecActual: nil,
-            startedAt: Int64(started.timeIntervalSince1970 * 1000),
-            completedAt: Int64(completed.timeIntervalSince1970 * 1000),
-            repEvents: motion.currentRepEvents
+            restSecActual: restActual.map { max(0, $0) },
+            startedAt: Int64(startedAt.timeIntervalSince1970 * 1000),
+            completedAt: Int64(max(completedAt, startedAt).timeIntervalSince1970 * 1000),
+            repEvents: rec?.repEvents(adjustedTo: reps) ?? RepEvent.adjust([], to: reps),
+            clientId: setClientId
         )
+        sync.enqueue(.addSet(sessionClientId: sessionClientId, body: body))
 
-        do {
-            try await api.postSet(sessionId: session.id, body)
-        } catch {
-            // Non-fatal: keep going, but surface it. A production app would queue & retry.
-            lastError = (error as? APIError)?.errorDescription ?? error.localizedDescription
+        logged.append(LoggedSet(exerciseName: slot.exercise?.name ?? "Exercise",
+                                reps: reps, weightKg: currentWeightKg))
+        weightsByExercise[slot.exerciseId] = currentWeightKg
+        lastSetCompletedAt = completedAt
+
+        guard let rec, !rec.samples.isEmpty else { return }
+        let corrected = reps != detected
+        if corrected {
+            let store = calibration
+            let exerciseId = slot.exerciseId
+            Task { await store.correct(exerciseId: exerciseId, recording: rec, actual: reps) }
+        } else if detected > 0 {
+            calibration.confirm(exerciseId: slot.exerciseId)
         }
-
-        advanceAfterSet(slot: slot)
+        if corrected || settings.recordMotion {
+            sync.enqueueMotionTrace(MotionTraceBody(
+                exerciseId: slot.exerciseId, setClientId: setClientId, sampleHz: 50,
+                detectedReps: detected, actualReps: reps, params: rec.params, motion: rec.samples))
+        }
     }
 
-    /// Decide whether to rest (last of superset / standalone) or jump to the next partner.
-    private func advanceAfterSet(slot: WorkoutSlot) {
-        let isLast = currentIndex >= slots.count - 1
-        if isLast {
+    /// Rest after the last member of a superset round; otherwise straight to the next set.
+    private func advance(after slot: WorkoutSlot) {
+        guard currentIndex < slots.count - 1 else {
             Task { await finish() }
             return
         }
-        if slot.restAfter {
+        if let next = nextSlot { motion.setParams(calibration.params(for: next.exerciseId)) }
+        if slot.restAfter && !motion.isSetStarted {
             phase = .resting
-            rest.start(seconds: slot.restSec)
+            rest.start(restSec: slot.restSec, snoozeSec: settings.restAlarmSnoozeSec)
         } else {
-            // Superset partner next — no rest, straight into the next set.
-            currentIndex += 1
-            beginCurrentSet()
+            // Superset partner, or the next set already started while reviewing.
+            advanceToNextSlot()
         }
     }
 
-    /// Called when the user dismisses the rest alarm (or skips rest).
-    func endRestAndAdvance() {
-        rest.stop()
+    private func advanceToNextSlot() {
         guard currentIndex < slots.count - 1 else {
             Task { await finish() }
             return
@@ -170,49 +242,35 @@ final class WorkoutSessionViewModel: ObservableObject {
         beginCurrentSet()
     }
 
-    /// Skip the current slot without recording a set.
+    /// "Go" during rest / alarm.
+    func startNextSetNow() {
+        rest.skip()
+        advanceToNextSlot()
+    }
+
+    /// Skip the current slot without logging.
     func skipSlot() {
-        _ = motion.stopSet()
-        rest.stop()
-        if currentIndex < slots.count - 1 {
-            currentIndex += 1
-            beginCurrentSet()
-        } else {
-            Task { await finish() }
+        if phase == .lifting {
+            let motion = self.motion
+            Task { _ = await motion.finishSet() }
         }
+        recordingTask = nil
+        rest.skip()
+        advanceToNextSlot()
     }
 
-    // MARK: - Finish
+    // MARK: Finish
 
+    /// End Workout (any time) or the last set logged. Unlogged in-progress sets are dropped.
     func finish() async {
+        guard phase != .finishing && phase != .finished else { return }
         phase = .finishing
-        _ = motion.stopSet()
-        rest.stop()
-
-        // Finalize the live HKWorkout on the watch (saves to Health / rings).
-        _ = await workout.end()
-
-        guard let session else { phase = .finished; return }
-        let body = FinishSessionBody(notes: nil, bodyweightKg: settings.bodyweightKg)
-        do {
-            let finalized = try await api.finishSession(id: session.id, body)
-            self.session = finalized
-        } catch {
-            lastError = (error as? APIError)?.errorDescription ?? error.localizedDescription
-        }
+        rest.skip()
+        motion.stop()
+        recordingTask = nil
+        sync.enqueue(.finishSession(sessionClientId: sessionClientId,
+                                    body: FinishSessionBody(notes: nil, bodyweightKg: settings.bodyweightKg)))
+        _ = await workout.end()   // saves the HKWorkout (rings) on the watch
         phase = .finished
-    }
-
-    func cancelSession() {
-        motion.stopSet()
-        rest.stop()
-        workout.discard()
-        phase = .finished
-    }
-
-    private func fail(_ error: Error) {
-        let msg = (error as? APIError)?.errorDescription ?? error.localizedDescription
-        lastError = msg
-        phase = .error(msg)
     }
 }

@@ -1,0 +1,121 @@
+# XcodeGen spec — generates StrengthMaxxing.xcodeproj (gitignored, never edit it by hand).
+#
+#   brew install xcodegen && cd ios && xcodegen && open StrengthMaxxing.xcodeproj
+#
+# Before the first device build: set DEVELOPMENT_TEAM below (Xcode ▸ Settings ▸ Accounts
+# shows your team ID), and change APP_BUNDLE_ID if you want a different prefix. Re-run
+# `xcodegen` after editing this file — it overwrites anything changed in Xcode's UI.
+
+name: StrengthMaxxing
+
+options:
+  bundleIdPrefix: tech.simmerman
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""                       # ← your 10-character Team ID
+    APP_BUNDLE_ID: tech.simmerman.strengthmaxxing
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+
+targets:
+  # iPhone app — embeds the watch app.
+  StrengthMaxxing:
+    type: application
+    platform: iOS
+    sources:
+      - path: StrengthMaxxing            # shared: Core (pure), Models, Networking, Sync, Settings, Health
+      - path: "StrengthMaxxing iOS"
+    dependencies:
+      - target: StrengthMaxxingWatch     # single-target watch app → "Embed Watch Content"
+    info:
+      path: "StrengthMaxxing iOS/Info.plist"
+      properties:
+        CFBundleDisplayName: StrengthMaxxing
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSHealthShareUsageDescription: StrengthMaxxing reads your workouts, heart rate and energy to summarize your training.
+        NSHealthUpdateUsageDescription: StrengthMaxxing saves your strength workouts to Apple Health so they appear in Fitness and close your rings.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: "StrengthMaxxing iOS/StrengthMaxxing.entitlements"
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    settings:
+      base:
+        PRODUCT_NAME: StrengthMaxxing
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+
+  # Apple Watch app (companion of the iPhone app; talks to the API directly).
+  StrengthMaxxingWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: StrengthMaxxing
+      - path: "StrengthMaxxing Watch App"
+    info:
+      path: "StrengthMaxxing Watch App/Info.plist"
+      properties:
+        CFBundleDisplayName: StrengthMaxxing
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
+        WKBackgroundModes: [workout-processing]
+        NSMotionUsageDescription: StrengthMaxxing uses motion to count your reps automatically.
+        NSHealthShareUsageDescription: StrengthMaxxing reads heart rate and energy during your workout.
+        NSHealthUpdateUsageDescription: StrengthMaxxing saves your strength workout to Apple Health.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: "StrengthMaxxing Watch App/StrengthMaxxingWatch.entitlements"
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
+    settings:
+      base:
+        PRODUCT_NAME: StrengthMaxxingWatch
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: YES
+
+  # Unit tests for the pure core (same files as `swift test` via Package.swift).
+  StrengthMaxxingCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: StrengthMaxxing/Core
+      - path: StrengthMaxxing/Models
+      - path: Tests/StrengthMaxxingTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).coretests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  StrengthMaxxing:
+    build:
+      targets:
+        StrengthMaxxing: all
+        StrengthMaxxingCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [StrengthMaxxingCoreTests]
+  StrengthMaxxingWatch:
+    build:
+      targets:
+        StrengthMaxxingWatch: all
+    run:
+      config: Debug

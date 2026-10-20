@@ -2,29 +2,61 @@
 //  WatchSettingsView.swift
 //  StrengthMaxxing Watch App
 //
-//  Point the watch at the server and enter the API token. Since the watch talks to the
-//  API directly, it keeps its own copy of these (see README). Dictation/scribble entry.
+//  Server URL + token normally arrive from the iPhone (WatchConnectivity); editing them
+//  here overrides until the phone sends new ones. Units / voice / snooze default from
+//  the server's settings.
 //
 
 import SwiftUI
 
 struct WatchSettingsView: View {
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var sync = SyncService.shared
     @State private var pingResult: String?
 
     var body: some View {
         Form {
-            Section("Server") {
-                TextField("https://host:3000", text: $settings.baseURLString)
-                    .textInputAutocapitalization(.never)
-                SecureField("API token", text: $settings.token)
-            }
-            Section("Bodyweight") {
-                Stepper(value: $settings.bodyweightKg, in: 30...250, step: 0.5) {
-                    Text(String(format: "%.1f kg", settings.bodyweightKg))
+            Section("Counting") {
+                Toggle("Speak rep count", isOn: $settings.voiceCount)
+                Toggle("Record motion for tuning", isOn: $settings.recordMotion)
+                Picker("Units", selection: $settings.units) {
+                    Text("lb").tag(WeightUnit.lb)
+                    Text("kg").tag(WeightUnit.kg)
+                }
+                Stepper(value: $settings.restAlarmSnoozeSec, in: 15...300, step: 15) {
+                    Text("Snooze \(settings.restAlarmSnoozeSec)s")
                 }
             }
+
+            Section("Bodyweight") {
+                Stepper {
+                    Text(Units.format(kg: settings.bodyweightKg, unit: settings.units))
+                } onIncrement: {
+                    settings.bodyweightKg = Units.stepped(kg: settings.bodyweightKg, direction: 1,
+                                                          category: "bodyweight", unit: settings.units)
+                } onDecrement: {
+                    settings.bodyweightKg = max(30, Units.stepped(kg: settings.bodyweightKg, direction: -1,
+                                                                  category: "bodyweight", unit: settings.units))
+                }
+            }
+
             Section {
+                TextField("Server URL", text: $settings.baseURLString)
+                SecureField("API token", text: $settings.token)
+            } header: {
+                Text("Server")
+            } footer: {
+                Text("Set on your iPhone and sent to the watch automatically. Edit here to override.")
+            }
+
+            Section("Sync") {
+                LabeledContent("Waiting", value: "\(sync.pendingCount)")
+                if sync.deadLetterCount > 0 {
+                    LabeledContent("Failed", value: "\(sync.deadLetterCount)")
+                    if let err = sync.lastError { Text(err).font(.caption2).foregroundStyle(.orange) }
+                    Button("Retry failed") { Task { await sync.requeueFailed() } }
+                }
+                Button("Sync now") { Task { await sync.refreshRemote() } }
                 Button("Test connection") {
                     Task {
                         do { _ = try await APIClient.shared.ping(); pingResult = "OK" }
@@ -38,5 +70,9 @@ struct WatchSettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .onChange(of: settings.units) { _, units in
+            // Units are shared with the dashboard + phone.
+            Task { try? await APIClient.shared.patchSettings(SettingsPatch(units: units)) }
+        }
     }
 }

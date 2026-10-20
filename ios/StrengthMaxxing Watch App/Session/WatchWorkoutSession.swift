@@ -54,15 +54,20 @@ final class WatchWorkoutSession: NSObject, ObservableObject {
 
             let start = Date()
             self.startDate = start
-            s.startActivity(with: start)
-            b.beginCollection(withStart: start) { [weak self] _, _ in
-                Task { @MainActor in self?.isActive = true }
-            }
             self.session = s
             self.builder = b
+            s.startActivity(with: start)
+            Task {
+                do {
+                    try await b.beginCollection(at: start)
+                    self.isActive = true
+                } catch {
+                    print("HK beginCollection failed: \(error)")
+                }
+            }
         } catch {
             // If the session can't start (e.g. simulator without Health), we degrade
-            // gracefully — reps + rest + API posting all still work without the ring.
+            // gracefully — reps + rest + offline sync all still work without the ring.
             self.session = nil
             self.builder = nil
         }
@@ -72,27 +77,22 @@ final class WatchWorkoutSession: NSObject, ObservableObject {
     func pause() { session?.pause() }
     func resume() { session?.resume() }
 
-    /// End the live session and finalize the HKWorkout. Returns the saved workout's dates.
-    /// The completion carries the total active energy for optional reconciliation.
+    /// End the live session and save the HKWorkout. Returns its dates + energy.
     func end() async -> (start: Date, end: Date, energyKcal: Double)? {
         guard let session, let builder else { return nil }
         let endDate = Date()
         session.end()
-
-        return await withCheckedContinuation { continuation in
-            builder.endCollection(withEnd: endDate) { [weak self] _, _ in
-                builder.finishWorkout { _, _ in
-                    Task { @MainActor in
-                        let start = self?.startDate ?? endDate
-                        let energy = self?.activeEnergyKcal ?? 0
-                        self?.isActive = false
-                        self?.session = nil
-                        self?.builder = nil
-                        continuation.resume(returning: (start, endDate, energy))
-                    }
-                }
-            }
+        do {
+            try await builder.endCollection(at: endDate)
+            _ = try await builder.finishWorkout()
+        } catch {
+            print("HK finish failed: \(error)")
         }
+        let result = (start: startDate ?? endDate, end: endDate, energyKcal: activeEnergyKcal)
+        isActive = false
+        self.session = nil
+        self.builder = nil
+        return result
     }
 
     func discard() {

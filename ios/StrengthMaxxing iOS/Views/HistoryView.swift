@@ -66,6 +66,7 @@ struct HistoryView: View {
 }
 
 private struct SessionSummaryRow: View {
+    @EnvironmentObject var settings: AppSettings
     let session: Session
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -75,7 +76,7 @@ private struct SessionSummaryRow: View {
                     Label(d, systemImage: "calendar").font(.caption)
                 }
                 if let v = session.totalVolumeKg {
-                    Label(String(format: "%.0f kg", v), systemImage: "scalemass").font(.caption)
+                    Label(Units.format(kg: v, unit: settings.units), systemImage: "scalemass").font(.caption)
                 }
                 if let k = session.estimatedKcal {
                     Label(String(format: "%.0f kcal", k), systemImage: "flame").font(.caption)
@@ -115,8 +116,9 @@ final class SessionDetailViewModel: ObservableObject {
 }
 
 struct SessionDetailView: View {
+    @EnvironmentObject var settings: AppSettings
     let sessionId: Int
-    @StateObject private var vm = SessionDetailViewModel()
+    @StateObject var vm = SessionDetailViewModel()   // not private: keeps init(sessionId:) internal
 
     var body: some View {
         Group {
@@ -127,13 +129,13 @@ struct SessionDetailView: View {
                 List {
                     Section("Summary") {
                         if let v = session.totalVolumeKg {
-                            LabeledContent("Total volume", value: String(format: "%.0f kg", v))
+                            LabeledContent("Total volume", value: Units.format(kg: v, unit: settings.units))
                         }
                         if let k = session.estimatedKcal {
                             LabeledContent("Estimated kcal", value: String(format: "%.0f", k))
                         }
                         if let bw = session.bodyweightKg {
-                            LabeledContent("Bodyweight", value: String(format: "%.1f kg", bw))
+                            LabeledContent("Bodyweight", value: Units.format(kg: bw, unit: settings.units))
                         }
                     }
                     if let sets = session.sets, !sets.isEmpty {
@@ -143,8 +145,7 @@ struct SessionDetailView: View {
                                     Text(set.exercise?.name ?? "Exercise \(set.exerciseId)")
                                         .font(.subheadline).bold()
                                     HStack(spacing: 8) {
-                                        Text("\(set.reps) reps")
-                                        Text(String(format: "%.1f kg", set.weightKg))
+                                        Text("\(set.reps) × \(Units.format(kg: set.weightKg, unit: settings.units))")
                                         if let rpe = set.rpe { Text("RPE \(String(format: "%.1f", rpe))") }
                                         if set.isWarmup == true { Text("warm-up").italic() }
                                     }

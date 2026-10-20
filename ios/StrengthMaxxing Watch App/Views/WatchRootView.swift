@@ -2,83 +2,81 @@
 //  WatchRootView.swift
 //  StrengthMaxxing Watch App
 //
-//  Root navigation: pick a workout, then run the active session. Also a small settings
-//  screen so the watch can be pointed at the server independently (direct-to-API model).
+//  Pick a workout (from the on-disk cache first, so it works offline; refreshed from the
+//  server when reachable), then run it. Settings + sync status at the bottom.
 //
 
 import SwiftUI
 
 struct WatchRootView: View {
     @EnvironmentObject var settings: AppSettings
-    @StateObject private var loader = WatchWorkoutsLoader()
+    @ObservedObject private var sync = SyncService.shared
+    @State private var workouts: [Workout] = []
+    @State private var loadError: String?
+    @State private var isRefreshing = false
 
     var body: some View {
         NavigationStack {
             List {
-                if !settings.baseURLString.isEmpty {
-                    Section {
-                        switch loader.state {
-                        case .idle, .loading:
+                Section {
+                    if workouts.isEmpty {
+                        if isRefreshing {
                             HStack { ProgressView(); Text("Loading…") }
-                        case .loaded(let workouts):
-                            if workouts.isEmpty {
-                                Text("No workouts. Create one on iPhone.")
-                                    .font(.footnote).foregroundStyle(.secondary)
-                            } else {
-                                ForEach(workouts) { w in
-                                    NavigationLink {
-                                        ActiveSessionView(viewModel: WorkoutSessionViewModel(workout: w))
-                                    } label: {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(w.name).font(.headline)
-                                            Text("\(w.exercises.count) exercises")
-                                                .font(.caption2).foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                            }
-                        case .failed(let msg):
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Couldn't load").font(.headline)
-                                Text(msg).font(.caption2).foregroundStyle(.secondary)
-                                Button("Retry") { Task { await loader.load() } }
+                        } else {
+                            Text(loadError ?? "No workouts yet. Create one on the web or iPhone.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    ForEach(workouts) { w in
+                        NavigationLink(value: w) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(w.name).font(.headline)
+                                Text("\(w.exercises.count) exercises")
+                                    .font(.caption2).foregroundStyle(.secondary)
                             }
                         }
-                    } header: {
-                        Text("Workouts")
                     }
-                } else {
-                    Text("Set your server URL in Settings.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                } header: {
+                    Text("Workouts")
+                } footer: {
+                    if loadError != nil && !workouts.isEmpty {
+                        Text("Offline — showing saved workouts.")
+                    }
                 }
 
                 Section {
-                    NavigationLink("Settings") { WatchSettingsView() }
+                    if sync.pendingCount > 0 {
+                        Button {
+                            Task { await sync.syncNow() }
+                        } label: {
+                            Label("\(sync.pendingCount) to sync", systemImage: "icloud.and.arrow.up")
+                        }
+                    }
+                    NavigationLink {
+                        WatchSettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                 }
             }
             .navigationTitle("StrengthMaxxing")
-            .task { await loader.load() }
+            .navigationDestination(for: Workout.self) { w in
+                ActiveSessionView(viewModel: WorkoutSessionViewModel(workout: w))
+            }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
-}
 
-@MainActor
-final class WatchWorkoutsLoader: ObservableObject {
-    enum State {
-        case idle, loading
-        case loaded([Workout])
-        case failed(String)
-    }
-    @Published var state: State = .idle
-
-    func load() async {
-        state = .loading
+    private func load() async {
+        if workouts.isEmpty, let cached = sync.cachedWorkouts() { workouts = cached }
+        isRefreshing = true
+        defer { isRefreshing = false }
         do {
-            let workouts = try await APIClient.shared.getWorkouts()
-                .filter { $0.archived != true }
-            state = .loaded(workouts)
+            workouts = try await sync.refreshWorkouts()
+            loadError = nil
         } catch {
-            state = .failed((error as? APIError)?.errorDescription ?? error.localizedDescription)
+            loadError = (error as? APIError)?.errorDescription ?? error.localizedDescription
         }
     }
 }
