@@ -20,13 +20,17 @@ const MODEL_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 120_000;
 // Model invocation
 // ---------------------------------------------------------------------------
 
-// Is the `claude` CLI usable? Cache the answer after first probe.
+// Is the `claude` CLI usable? Cache success forever; retry failures after a
+// minute so one cold-start hiccup doesn't disable the CLI path until restart.
 let cliAvailable = null;
+let reprobeAt = 0;
 function probeCli() {
-  if (cliAvailable !== null) return Promise.resolve(cliAvailable);
+  if (cliAvailable === true) return Promise.resolve(true);
+  if (cliAvailable === false && Date.now() < reprobeAt) return Promise.resolve(false);
   return new Promise((resolve) => {
     execFile(CLI_BIN, ['--version'], { timeout: 10_000 }, (err) => {
       cliAvailable = !err;
+      reprobeAt = Date.now() + 60_000;
       resolve(cliAvailable);
     });
   });
@@ -157,6 +161,7 @@ function progressPrompt(input) {
     'Task: adjust today\'s working weights and reps per exercise via autoregulation.',
     `Inputs (JSON): ${JSON.stringify(input)}`,
     'readiness is 0-100: higher = push harder / add load, lower = deload / reduce load or reps.',
+    'If readiness is null it was not logged today: assume a normal day, progress conservatively.',
     'Base each suggestion on lastWeightKg and lastReps vs targetReps, then modulate by readiness',
     'and context (timeOfDay, kcalBalance deficit, sleepHours, sorenessNote).',
     'deltaPct is the percent change in load vs lastWeightKg (may be negative).',
@@ -181,7 +186,10 @@ function readBody(req) {
     let data = '';
     req.on('data', (c) => {
       data += c;
-      if (data.length > 1_000_000) reject(new Error('body too large'));
+      if (data.length > 1_000_000) {
+        reject(new Error('body too large'));
+        req.destroy(); // stop reading — don't buffer the rest of an oversized body
+      }
     });
     req.on('end', () => {
       if (!data) return resolve({});
@@ -207,7 +215,8 @@ function validatePlan(b) {
 function validateProgress(b) {
   if (!b || typeof b !== 'object') return 'body required';
   if (!b.workout || !Array.isArray(b.workout.exercises)) return 'workout.exercises[] required';
-  if (!Number.isFinite(b.readiness)) return 'readiness (number) required';
+  // readiness may be null — the web proxy sends null when no readiness is logged today.
+  if (b.readiness != null && !Number.isFinite(b.readiness)) return 'readiness (number|null) required';
   return null;
 }
 

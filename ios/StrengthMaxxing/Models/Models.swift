@@ -157,8 +157,10 @@ struct WorkoutSet: Decodable, Identifiable, Hashable {
     let rpe: Double?
     let isWarmup: Bool?
     let restSecActual: Int?
-    let startedAt: Int64?
-    let completedAt: Int64?
+    /// ISO-8601 strings — the server stores these as Dates and JSON-serializes
+    /// them as strings (epoch ms is only used in the POST body direction).
+    let startedAt: String?
+    let completedAt: String?
     /// Joined exercise.
     let exercise: Exercise?
     /// Joined per-rep timing events, if present.
@@ -180,8 +182,8 @@ struct WorkoutSet: Decodable, Identifiable, Hashable {
         rpe = try c.decodeIfPresent(Double.self, forKey: .rpe)
         isWarmup = try c.decodeIfPresent(Bool.self, forKey: .isWarmup)
         restSecActual = try c.decodeIfPresent(Int.self, forKey: .restSecActual)
-        startedAt = try c.decodeIfPresent(Int64.self, forKey: .startedAt)
-        completedAt = try c.decodeIfPresent(Int64.self, forKey: .completedAt)
+        startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
+        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
         exercise = try c.decodeIfPresent(Exercise.self, forKey: .exercise)
 
         // `reps` may be an Int (the count) or, in some serializations, an array of rep
@@ -208,9 +210,9 @@ struct Session: Decodable, Identifiable, Hashable {
     let source: String?
     let bodyweightKg: Double?
     let readinessScore: Int?
-    /// ISO strings from the server.
+    /// ISO strings from the server. The end-of-session column is `endedAt`.
     let startedAt: String?
-    let completedAt: String?
+    let endedAt: String?
     /// Computed on finish.
     let totalVolumeKg: Double?
     let estimatedKcal: Double?
@@ -219,7 +221,7 @@ struct Session: Decodable, Identifiable, Hashable {
 
     enum CodingKeys: String, CodingKey {
         case id, workoutId, name, source, bodyweightKg, readinessScore
-        case startedAt, completedAt, totalVolumeKg, estimatedKcal, notes, sets
+        case startedAt, endedAt, totalVolumeKg, estimatedKcal, notes, sets
     }
 
     init(from decoder: Decoder) throws {
@@ -231,7 +233,7 @@ struct Session: Decodable, Identifiable, Hashable {
         bodyweightKg = try c.decodeIfPresent(Double.self, forKey: .bodyweightKg)
         readinessScore = try c.decodeIfPresent(Int.self, forKey: .readinessScore)
         startedAt = try c.decodeIfPresent(String.self, forKey: .startedAt)
-        completedAt = try c.decodeIfPresent(String.self, forKey: .completedAt)
+        endedAt = try c.decodeIfPresent(String.self, forKey: .endedAt)
         totalVolumeKg = try c.decodeIfPresent(Double.self, forKey: .totalVolumeKg)
         estimatedKcal = try c.decodeIfPresent(Double.self, forKey: .estimatedKcal)
         notes = try c.decodeIfPresent(String.self, forKey: .notes)
@@ -248,24 +250,24 @@ struct FinishSessionBody: Codable {
 // MARK: - HealthKit payload
 
 /// `GET /api/sessions/:id/healthkit` → HKWorkout payload (`repo.healthkitPayload`).
-///
-/// The exact fields the server emits are not fully specified in the contract, so we
-/// decode defensively: the fields we rely on are optional and we fall back to
+/// Shape verified against the server: `workoutActivityType`, ISO `start`/`end`,
+/// `durationSec`, `totalEnergyBurnedKcal`. All optional so we can fall back to
 /// building the HKWorkout locally from the finished session if any are missing.
-struct HealthKitPayload: Codable {
-    let activityType: String?
-    /// epoch ms
-    let startDate: Int64?
-    /// epoch ms
-    let endDate: Int64?
+struct HealthKitPayload: Decodable {
+    let workoutActivityType: String?
+    /// ISO-8601 strings
+    let start: String?
+    let end: String?
+    let durationSec: Double?
     let totalEnergyBurnedKcal: Double?
-    let totalDistanceMeters: Double?
-    let metadata: [String: String]?
+    // ponytail: server metadata mixes string/number values — omitted until a consumer needs it
 }
 
 // MARK: - API error envelope
 
-/// Every endpoint returns `{ "error": string }` on failure (contract).
-struct APIErrorBody: Codable {
-    let error: String
+/// The web API (SvelteKit) serializes errors as `{ "message": string }`; the
+/// internal coach agent service uses `{ "error": string }`. Tolerate both.
+struct APIErrorBody: Decodable {
+    let message: String?
+    let error: String?
 }

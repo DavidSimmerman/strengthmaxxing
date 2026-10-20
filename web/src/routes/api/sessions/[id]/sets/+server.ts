@@ -22,8 +22,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const b = body as Record<string, unknown>;
 
 	if (typeof b.exerciseId !== 'number') throw error(400, 'exerciseId is required and must be a number');
-	if (typeof b.reps !== 'number') throw error(400, 'reps is required and must be a number');
-	if (typeof b.weightKg !== 'number') throw error(400, 'weightKg is required and must be a number');
+	if (typeof b.reps !== 'number' || !Number.isInteger(b.reps) || b.reps <= 0)
+		throw error(400, 'reps must be a positive integer');
+	if (typeof b.weightKg !== 'number' || !Number.isFinite(b.weightKg) || b.weightKg < 0)
+		throw error(400, 'weightKg must be a non-negative number');
 
 	const input: repo.SetInput = {
 		exerciseId: b.exerciseId,
@@ -63,11 +65,15 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		throw error(500, e instanceof Error ? e.message : 'failed to load session');
 	}
 	if (!session) throw error(404, 'session not found');
+	// Sessions are immutable once finished — a set landing here would silently
+	// diverge from the cached volume/kcal rollups stamped at finish time.
+	if (session.endedAt) throw error(409, 'session already finished');
 
 	try {
 		const set = repo.addSet(sessionId, input);
 		return json(set, { status: 201 });
 	} catch (e) {
+		if (repo.isFkError(e)) throw error(400, 'exerciseId does not exist');
 		throw error(500, e instanceof Error ? e.message : 'failed to add set');
 	}
 };

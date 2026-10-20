@@ -54,8 +54,10 @@ services:
     # Uncomment the block below and point at the host path that holds the creds
     # on your Coolify server. Option B (API key) needs no mount — just set
     # ANTHROPIC_API_KEY above.
+    # NOTE: the agent container runs as root ($HOME=/root), so the CLI reads
+    # /root/.claude — mount the creds there, not /home/node.
     # volumes:
-    #   - /root/.claude:/home/node/.claude:ro
+    #   - /root/.claude:/root/.claude:ro
     networks:
       - smx
 

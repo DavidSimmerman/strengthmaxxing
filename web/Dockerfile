@@ -53,8 +53,13 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
-# Run as the built-in unprivileged `node` user. /data (the sqlite volume mount)
-# is chowned in compose / by Coolify; DB_PATH points inside it.
+# /data is the sqlite volume mountpoint. Creating it here owned by `node` makes
+# a FRESH named volume inherit node:node (docker copies the image dir's
+# ownership on first use). Bind mounts don't get this — chown those to uid 1000
+# on the host (see deploy/README.md).
+RUN mkdir -p /data && chown node:node /data
+
+# Run as the built-in unprivileged `node` user.
 USER node
 
 EXPOSE 3000

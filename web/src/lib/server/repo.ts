@@ -177,6 +177,9 @@ export function addSet(sessionId: number, input: SetInput) {
 export function finishSession(id: number, patch?: { notes?: string; bodyweightKg?: number }) {
 	const s = db.select().from(sessions).where(eq(sessions.id, id)).get();
 	if (!s) return null;
+	// Idempotent: a duplicate /finish (client retry) must not restamp endedAt —
+	// that would recompute duration to "now" and inflate the kcal estimate.
+	if (s.endedAt) return s;
 	const sets = db.select().from(sessionSets).where(eq(sessionSets.sessionId, id)).all();
 	const working = sets.filter((x) => !x.isWarmup);
 	const totalVolumeKg = tonnage(working);
@@ -226,6 +229,11 @@ export const getSession = (id: number) =>
 		.sync();
 
 export const deleteSession = (id: number) => db.delete(sessions).where(eq(sessions.id, id)).run();
+
+// SQLite FK violations surface as generic driver Errors; routes use this to
+// map "referenced id doesn't exist" to a 400 instead of leaking a raw 500.
+export const isFkError = (e: unknown) =>
+	e instanceof Error && e.message.includes('FOREIGN KEY constraint failed');
 
 // ---------- readiness ----------
 export function upsertReadiness(

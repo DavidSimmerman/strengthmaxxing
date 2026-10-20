@@ -71,7 +71,7 @@ private struct SessionSummaryRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(session.name ?? "Session #\(session.id)").font(.headline)
             HStack(spacing: 10) {
-                if let d = displayDate(session.completedAt ?? session.startedAt) {
+                if let d = displayDate(session.endedAt ?? session.startedAt) {
                     Label(d, systemImage: "calendar").font(.caption)
                 }
                 if let v = session.totalVolumeKg {

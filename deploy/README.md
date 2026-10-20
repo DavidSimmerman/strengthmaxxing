@@ -70,10 +70,12 @@ The agent calls Claude two ways; pick one:
   volume mount in `docker-compose.yml`:
   ```yaml
   volumes:
-    - /root/.claude:/home/node/.claude:ro
+    - /root/.claude:/root/.claude:ro
   ```
-  Point the host path at wherever your logged-in `~/.claude` creds live on the
-  Coolify server. Leave `ANTHROPIC_API_KEY` unset.
+  Point the host path (left side) at wherever your logged-in `~/.claude` creds
+  live on the Coolify server. The container-side path must stay `/root/.claude`
+  — the agent container runs as root, so that's where the CLI looks. Leave
+  `ANTHROPIC_API_KEY` unset.
 - **B) API key**. Set `ANTHROPIC_API_KEY` (a secret) in the agent's environment;
   no mount needed. This is the simplest option for a headless server.
 

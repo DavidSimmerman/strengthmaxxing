@@ -41,12 +41,12 @@ let package = Package(
             name: "StrengthMaxxingTests",
             dependencies: ["StrengthMaxxing"],
             path: "Tests/StrengthMaxxingTests",
-            // RepCounter.swift lives in the Watch App folder but is pure Swift; we compile
-            // a copy into the test target via a symlink or by adding it here. To keep the
-            // package self-contained for `swift test`, we reference it through the watch dir.
+            // RepCounter.swift lives in the Watch App folder but is pure Swift; it is
+            // compiled here through the RepCounter.swift SYMLINK in this directory
+            // (SwiftPM rejects `../` source paths that escape the target directory).
             sources: [
                 "RepCounterTests.swift",
-                "../../StrengthMaxxing Watch App/Motion/RepCounter.swift",
+                "RepCounter.swift",
             ],
             swiftSettings: [
                 // Enables the `@testable import StrengthMaxxing` inside RepCounter.swift so

@@ -11,6 +11,7 @@
 
 import Foundation
 import HealthKit
+import Combine
 
 @MainActor
 final class HealthKitManager: ObservableObject {
@@ -122,7 +123,7 @@ final class HealthKitManager: ObservableObject {
         }
 
         let start = parse(session.startedAt) ?? fallbackStart
-        let end = parse(session.completedAt) ?? fallbackEnd
+        let end = parse(session.endedAt) ?? fallbackEnd
         try await saveStrengthWorkout(
             start: start, end: end, energyKcal: session.estimatedKcal, session: session
         )

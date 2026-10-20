@@ -13,6 +13,7 @@
 
 import Foundation
 import Combine
+import Security
 
 /// Immutable, Sendable snapshot of the config an API request needs. Taken on the main
 /// actor and handed to the (non-isolated) APIClient so no mutable UI state crosses actors.

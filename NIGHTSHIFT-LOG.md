@@ -1,4 +1,29 @@
-# 🌙 strengthmaxxing — Nightshift Build Log
+# 🌙 Nightshift Run 2 — Review & Improve (2026-07-10)
+
+**Task:** Review the whole project; fix bugs and make improvements.
+
+## Status (run 2)
+- [x] Baseline: build + svelte-check + metrics self-check + API smoke green (all ✓ 2026-07-10;
+      servers restarted: web :4173, agent :8899 — run-1 processes died with the old session)
+- [ ] Review sweep: web server/API, web UI, metrics math, agent, iOS, deploy
+- [ ] Triage findings → fix real bugs (minimal diffs)
+- [ ] Verify fixes (smoke + Playwright + build)
+- [ ] Adversarial review of my diff (codex review --uncommitted)
+- [ ] Commit + final log update
+
+## Decisions (run 2)
+- (recorded as made)
+
+## Findings & fixes (run 2)
+- (filled in as review lands)
+
+## Resume pointer (run 2)
+Re-read this section + run-1 log below. Baseline commands are in run-1 "How to run / verify".
+Continue from first unchecked box.
+
+---
+
+# 🌙 strengthmaxxing — Nightshift Build Log (run 1, 2026-07-07)
 
 **Task:** Build "strengthmaxxing", a Motra-style strength-training app. Create workouts
 with exercises (sets/reps/weight/rest timers), supersets, an Apple Watch app that

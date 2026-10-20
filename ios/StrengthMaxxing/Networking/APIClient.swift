@@ -109,7 +109,8 @@ final class APIClient: Sendable {
             throw APIError.http(status: -1, message: "No HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let message = (try? decoder.decode(APIErrorBody.self, from: data))?.error
+            let body = try? decoder.decode(APIErrorBody.self, from: data)
+            let message = body?.message ?? body?.error
                 ?? String(data: data, encoding: .utf8)
                 ?? "Unknown error"
             throw APIError.http(status: http.statusCode, message: message)

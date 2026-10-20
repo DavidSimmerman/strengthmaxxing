@@ -61,6 +61,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 		return json(created, { status: 201 });
 	} catch (e) {
+		if (repo.isFkError(e)) throw error(400, 'exerciseId does not exist');
 		throw error(500, e instanceof Error ? e.message : 'failed to create workout');
 	}
 };
