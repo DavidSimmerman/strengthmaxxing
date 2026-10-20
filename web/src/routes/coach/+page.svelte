@@ -1,270 +1,382 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { wt } from '$lib/units.svelte';
 	import type { PageData } from './$types';
+	import type { ChatMessage, CoachProfile } from '$lib/server/coach';
 
 	let { data }: { data: PageData } = $props();
 
-	// ---- plan generator ----
-	type PlanExercise = { name: string; sets: number; reps: number; restSec: number; notes?: string };
-	type Plan = { name: string; days: { name: string; exercises: PlanExercise[] }[] };
+	// svelte-ignore state_referenced_locally
+	let messages = $state<ChatMessage[]>(data.messages);
+	let text = $state('');
+	let pending = $state<string | null>(null); // what the coach is working on
+	let listEl: HTMLDivElement;
 
-	let goal = $state('hypertrophy');
-	let daysPerWeek = $state(4);
-	let experience = $state('intermediate');
-	let equipment = $state('full gym');
-	let constraints = $state('');
+	async function scrollDown() {
+		await tick();
+		listEl?.scrollTo({ top: listEl.scrollHeight, behavior: 'smooth' });
+	}
+	$effect(() => {
+		scrollDown();
+	});
 
-	let planLoading = $state(false);
-	let planError = $state('');
-	let plan = $state<Plan | null>(null);
-	let rationale = $state('');
-
-	async function generatePlan(e: SubmitEvent) {
-		e.preventDefault();
-		planLoading = true;
-		planError = '';
-		plan = null;
-		rationale = '';
+	async function post(body: object, label: string, optimistic?: string) {
+		if (pending) return;
+		pending = label;
+		const tmpId = 'tmp';
+		if (optimistic) messages.push({ id: tmpId, role: 'user', text: optimistic, at: new Date().toISOString() });
+		scrollDown();
 		try {
-			const res = await fetch('/api/coach/plan', {
+			const res = await fetch('/api/coach/chat', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					profile: { goal, daysPerWeek, experience, equipment: [equipment], avoid: constraints || undefined }
-				})
+				body: JSON.stringify(body)
 			});
-			const body = await res.json().catch(() => ({}));
-			if (!res.ok) throw new Error(body.error || `Coach unavailable (${res.status})`);
-			plan = body.plan ?? null;
-			rationale = body.rationale ?? '';
-			if (!plan) throw new Error('Coach returned no plan');
-		} catch (err) {
-			planError = err instanceof Error ? err.message : 'Something went wrong';
+			const out = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(out.message || `Coach unavailable (${res.status})`);
+			messages = [...messages.filter((m) => m.id !== tmpId), ...out.messages];
+		} catch (e) {
+			messages = messages.filter((m) => m.id !== tmpId);
+			messages.push({
+				id: crypto.randomUUID(),
+				role: 'coach',
+				text: e instanceof Error ? e.message : 'Something went wrong',
+				error: true,
+				at: new Date().toISOString()
+			});
 		} finally {
-			planLoading = false;
+			pending = null;
+			scrollDown();
 		}
 	}
 
-	// ---- progression ----
-	type Adjustment = {
-		name: string;
-		suggestedWeightKg: number;
-		suggestedReps: number;
-		deltaPct: number;
-		reason: string;
-	};
-	let progressingId = $state<number | null>(null);
-	let progressError = $state('');
-	let progress = $state<{ workoutId: number; adjustments: Adjustment[]; summary: string } | null>(
-		null
+	function send(e?: SubmitEvent) {
+		e?.preventDefault();
+		const t = text.trim();
+		if (!t) return;
+		text = '';
+		post({ text: t }, 'Thinking — this can take up to a minute.', t);
+	}
+
+	// ---- plan card actions ----
+	let busy = $state<string | null>(null);
+	let openPlan = $state<Record<string, boolean>>({});
+	async function savePlan(m: ChatMessage) {
+		busy = m.id;
+		const res = await fetch('/api/coach/program', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ plan: m.plan, messageId: m.id })
+		});
+		busy = null;
+		if (res.ok) {
+			m.saved = true;
+			invalidateAll();
+		}
+	}
+
+	// ---- progress card: every suggestion checked by default ----
+	let unchecked = $state<Record<string, boolean>>({});
+	const key = (m: ChatMessage, name: string) => `${m.id}:${name}`;
+	async function apply(m: ChatMessage) {
+		const chosen = m.progress!.adjustments.filter((a) => !unchecked[key(m, a.name)]);
+		if (!chosen.length) return;
+		busy = m.id;
+		const res = await fetch('/api/coach/progress/apply', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ workoutId: m.progress!.workoutId, messageId: m.id, adjustments: chosen })
+		});
+		busy = null;
+		if (res.ok) m.applied = chosen.map((a) => a.name);
+	}
+
+	// ---- profile ----
+	let showProfile = $state(false);
+	// svelte-ignore state_referenced_locally
+	let p = $state<CoachProfile & { equipmentText: string }>({
+		goal: 'strength',
+		daysPerWeek: 4,
+		sessionMin: 60,
+		experience: 'intermediate',
+		...data.profile,
+		equipmentText: (data.profile.equipment ?? []).join(', ')
+	});
+	let savingProfile = $state(false);
+	async function saveProfile(e: SubmitEvent) {
+		e.preventDefault();
+		savingProfile = true;
+		const { equipmentText, ...rest } = p;
+		await fetch('/api/coach/profile', {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				...rest,
+				equipment: equipmentText.split(',').map((s) => s.trim()).filter(Boolean)
+			})
+		});
+		savingProfile = false;
+		showProfile = false;
+		invalidateAll();
+	}
+	const summary = $derived(
+		[
+			data.profile.goal,
+			data.profile.daysPerWeek && `${data.profile.daysPerWeek}×${data.profile.sessionMin ?? 60} min`,
+			data.profile.experience,
+			data.profile.avoid
+		]
+			.filter(Boolean)
+			.join(' · ')
 	);
 
-	async function progressWorkout(workoutId: number) {
-		progressingId = workoutId;
-		progressError = '';
-		progress = null;
-		try {
-			const res = await fetch('/api/coach/progress', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ workoutId })
-			});
-			const body = await res.json().catch(() => ({}));
-			if (!res.ok) throw new Error(body.error || `Coach unavailable (${res.status})`);
-			progress = {
-				workoutId,
-				adjustments: body.adjustments ?? [],
-				summary: body.summary ?? ''
-			};
-		} catch (err) {
-			progressError = err instanceof Error ? err.message : 'Something went wrong';
-		} finally {
-			progressingId = null;
-		}
+	async function clearChat() {
+		if (!confirm('Clear the conversation? Your program and profile stay.')) return;
+		await fetch('/api/coach/chat', { method: 'DELETE' });
+		messages = [];
 	}
+
+	const examples = [
+		'Build me a 4-day program for a bigger bench and squat',
+		'Swap squats for leg press this week, my knee is cranky',
+		'Make Friday shorter, I only have 40 minutes'
+	];
+	const field =
+		'rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent';
 </script>
 
-<header class="mb-6">
-	<p class="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">AI</p>
-	<h1 class="text-3xl font-black tracking-tight">Coach</h1>
-</header>
-
-<!-- PLAN GENERATOR -->
-<section class="mb-6 rounded-2xl border border-line bg-panel p-5">
-	<h2 class="mb-4 text-sm font-bold uppercase tracking-wider text-zinc-400">Design a program</h2>
-	<form onsubmit={generatePlan} class="grid gap-3 sm:grid-cols-2">
-		<label class="flex flex-col gap-1 text-xs text-zinc-400">
-			Goal
-			<select
-				bind:value={goal}
-				class="rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent"
-			>
-				<option value="hypertrophy">Hypertrophy (size)</option>
-				<option value="strength">Strength</option>
-				<option value="powerbuilding">Powerbuilding</option>
-				<option value="fat loss">Fat loss / conditioning</option>
-				<option value="general">General fitness</option>
-			</select>
-		</label>
-		<label class="flex flex-col gap-1 text-xs text-zinc-400">
-			Days / week
-			<select
-				bind:value={daysPerWeek}
-				class="rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent"
-			>
-				{#each [2, 3, 4, 5, 6] as d (d)}<option value={d}>{d} days</option>{/each}
-			</select>
-		</label>
-		<label class="flex flex-col gap-1 text-xs text-zinc-400">
-			Experience
-			<select
-				bind:value={experience}
-				class="rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent"
-			>
-				<option value="beginner">Beginner</option>
-				<option value="intermediate">Intermediate</option>
-				<option value="advanced">Advanced</option>
-			</select>
-		</label>
-		<label class="flex flex-col gap-1 text-xs text-zinc-400">
-			Equipment
-			<input
-				bind:value={equipment}
-				placeholder="full gym / dumbbells only / home"
-				class="rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent"
-			/>
-		</label>
-		<label class="flex flex-col gap-1 text-xs text-zinc-400 sm:col-span-2">
-			Constraints (optional)
-			<input
-				bind:value={constraints}
-				placeholder="e.g. bad shoulder, 45 min sessions"
-				class="rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent"
-			/>
-		</label>
-		<button
-			disabled={planLoading}
-			class="rounded-xl bg-accent py-3 font-bold text-ink transition active:scale-[0.98] disabled:opacity-60 sm:col-span-2"
-		>
-			{planLoading ? 'Consulting coach…' : 'Generate plan'}
-		</button>
-	</form>
-
-	{#if planLoading}
-		<div class="mt-4 flex items-center gap-3 text-sm text-zinc-400">
-			<span class="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent"
-			></span>
-			Building your program — this can take a few seconds.
-		</div>
-	{/if}
-	{#if planError}
-		<div class="mt-4 rounded-xl border border-accent/40 bg-accent/[0.06] px-4 py-3 text-sm">
-			<p class="font-semibold text-accent">Coach is unavailable</p>
-			<p class="text-zinc-400">{planError}. Try again in a moment.</p>
-		</div>
-	{/if}
-
-	{#if plan}
-		<div class="mt-5">
-			<h3 class="text-lg font-black">{plan.name}</h3>
-			{#if rationale}<p class="mb-3 text-sm text-zinc-400">{rationale}</p>{/if}
-			<div class="grid gap-3 sm:grid-cols-2">
-				{#each plan.days as day, i (i)}
-					<div class="rounded-xl border border-line bg-ink p-4">
-						<div class="mb-2 flex items-center gap-2">
-							<span
-								class="grid h-6 w-6 place-items-center rounded-full bg-accent/20 text-xs font-black text-accent"
-								>{i + 1}</span
-							>
-							<h4 class="font-bold">{day.name}</h4>
-						</div>
-						<ul class="flex flex-col gap-1 text-sm">
-							{#each day.exercises as ex (ex.name)}
-								<li class="flex items-baseline justify-between gap-2">
-									<span class="text-zinc-200">{ex.name}</span>
-									<span class="shrink-0 tabular-nums text-zinc-500"
-										>{ex.sets}×{ex.reps}</span
-									>
-								</li>
-								{#if ex.notes}
-									<li class="pl-1 text-[11px] text-zinc-600">{ex.notes}</li>
-								{/if}
-							{/each}
-						</ul>
-					</div>
-				{/each}
+<div class="-my-6 flex h-[calc(100dvh-6rem)] flex-col md:-my-10 md:h-dvh">
+	<!-- header -->
+	<header class="shrink-0 border-b border-line pt-6 pb-3 md:pt-10">
+		<div class="flex items-center justify-between gap-3">
+			<h1 class="text-3xl font-black tracking-tight">Coach</h1>
+			<div class="flex gap-2">
+				{#if messages.length}
+					<button onclick={clearChat} class="rounded-full px-3 py-1 text-xs text-zinc-500 hover:text-zinc-300"
+						>Clear</button
+					>
+				{/if}
+				<button
+					onclick={() => (showProfile = !showProfile)}
+					class="rounded-full bg-panel2 px-3 py-1 text-xs text-zinc-300">Profile {showProfile ? '▴' : '▾'}</button
+				>
 			</div>
 		</div>
-	{/if}
-</section>
-
-<!-- PROGRESSION -->
-<section>
-	<h2 class="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-400">
-		Auto-progress a template
-	</h2>
-	{#if data.workouts.length}
-		<div class="flex flex-col gap-2">
-			{#each data.workouts as w (w.id)}
-				<div class="rounded-2xl border border-line bg-panel p-4">
-					<div class="flex items-center gap-3">
-						<div class="min-w-0 flex-1">
-							<p class="font-bold">{w.name}</p>
-							<p class="text-xs text-zinc-500">{w.exerciseCount} exercises</p>
-						</div>
-						<button
-							onclick={() => progressWorkout(w.id)}
-							disabled={progressingId === w.id}
-							class="shrink-0 rounded-xl bg-accent2 px-4 py-2.5 text-sm font-bold text-ink transition active:scale-95 disabled:opacity-60"
-						>
-							{progressingId === w.id ? 'Thinking…' : 'Progress →'}
-						</button>
-					</div>
-
-					{#if progress && progress.workoutId === w.id}
-						<div class="mt-4 border-t border-line pt-3">
-							{#if progress.summary}
-								<p class="mb-3 text-sm text-zinc-300">{progress.summary}</p>
-							{/if}
-							<div class="flex flex-col gap-2">
-								{#each progress.adjustments as adj (adj.name)}
-									<div class="rounded-xl bg-ink p-3">
-										<div class="flex items-center justify-between gap-2">
-											<span class="font-semibold">{adj.name}</span>
-											<span class="flex items-center gap-2 tabular-nums">
-												<span class="font-bold text-accent2">{wt(adj.suggestedWeightKg)}</span>
-												<span class="text-zinc-500">× {adj.suggestedReps}</span>
-												<span
-													class="rounded px-1.5 py-0.5 text-xs font-bold"
-													class:bg-accent2={adj.deltaPct >= 0}
-													class:text-ink={adj.deltaPct !== 0}
-													class:bg-accent={adj.deltaPct < 0}
-													>{adj.deltaPct >= 0 ? '+' : ''}{adj.deltaPct}%</span
-												>
-											</span>
-										</div>
-										{#if adj.reason}
-											<p class="mt-1 text-xs text-zinc-500">{adj.reason}</p>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</div>
-			{/each}
-		</div>
-	{:else}
-		<p class="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-zinc-500">
-			Build a workout template first — then the coach can auto-progress its loads based on your last
-			session and today's readiness.
+		<p class="mt-1 text-xs text-zinc-500">
+			{summary || 'Set your goal, schedule and equipment in Profile.'}
+			{#if data.program}
+				· <span class="text-accent2">{data.program.name}, week {data.program.week} of {data.program.weeks}</span>
+			{/if}
 		</p>
-	{/if}
 
-	{#if progressError}
-		<div class="mt-3 rounded-xl border border-accent/40 bg-accent/[0.06] px-4 py-3 text-sm">
-			<p class="font-semibold text-accent">Couldn't get suggestions</p>
-			<p class="text-zinc-400">{progressError}.</p>
-		</div>
-	{/if}
-</section>
+		{#if showProfile}
+			<form onsubmit={saveProfile} class="mt-3 grid gap-2 rounded-2xl border border-line bg-panel p-4 sm:grid-cols-2">
+				<label class="flex flex-col gap-1 text-xs text-zinc-400">
+					Goal
+					<select bind:value={p.goal} class={field}>
+						<option value="strength">Strength</option>
+						<option value="hypertrophy">Size (hypertrophy)</option>
+						<option value="powerbuilding">Powerbuilding</option>
+						<option value="fat loss">Fat loss / conditioning</option>
+						<option value="general">General fitness</option>
+					</select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs text-zinc-400">
+					Experience
+					<select bind:value={p.experience} class={field}>
+						<option value="beginner">Beginner</option>
+						<option value="intermediate">Intermediate</option>
+						<option value="advanced">Advanced</option>
+					</select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs text-zinc-400">
+					Days per week
+					<select bind:value={p.daysPerWeek} class={field}>
+						{#each [2, 3, 4, 5, 6] as d (d)}<option value={d}>{d} days</option>{/each}
+					</select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs text-zinc-400">
+					Session length
+					<select bind:value={p.sessionMin} class={field}>
+						{#each [30, 45, 60, 75, 90] as m (m)}<option value={m}>{m} min</option>{/each}
+					</select>
+				</label>
+				<label class="flex flex-col gap-1 text-xs text-zinc-400 sm:col-span-2">
+					Equipment (comma-separated)
+					<input bind:value={p.equipmentText} placeholder="barbell + rack, dumbbells to 80 lb, cable stack" class={field} />
+				</label>
+				<label class="flex flex-col gap-1 text-xs text-zinc-400 sm:col-span-2">
+					Injuries / things to avoid
+					<input bind:value={p.avoid} placeholder="e.g. left shoulder: no behind-the-neck pressing" class={field} />
+				</label>
+				<button disabled={savingProfile} class="rounded-xl bg-accent py-2.5 font-bold text-ink disabled:opacity-60 sm:col-span-2"
+					>{savingProfile ? 'Saving…' : 'Save profile'}</button
+				>
+			</form>
+		{/if}
+	</header>
+
+	<!-- conversation -->
+	<div bind:this={listEl} class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-4 text-sm">
+		{#if !messages.length}
+			<div class="mr-8 rounded-2xl rounded-bl-md bg-panel px-3.5 py-2.5 text-zinc-200">
+				Tell me what you want in your own words. I'll build a multi-week program from your history,
+				and you can change it any time by just asking.
+			</div>
+			<div class="flex flex-wrap gap-2">
+				{#each examples as ex (ex)}
+					<button onclick={() => (text = ex)} class="rounded-full border border-line px-3 py-1.5 text-left text-xs text-zinc-300 hover:border-accent"
+						>{ex}</button
+					>
+				{/each}
+			</div>
+		{/if}
+
+		{#each messages as m (m.id)}
+			{#if m.role === 'user'}
+				<div class="ml-10 self-end rounded-2xl rounded-br-md bg-accent px-3.5 py-2.5 whitespace-pre-wrap text-ink">
+					{m.text}
+				</div>
+			{:else}
+				<div
+					class="mr-6 self-start rounded-2xl rounded-bl-md px-3.5 py-2.5 whitespace-pre-wrap
+						{m.error ? 'border border-accent/40 bg-accent/[0.06] text-zinc-300' : 'bg-panel text-zinc-200'}"
+				>
+					{m.text}
+				</div>
+
+				{#if m.plan}
+					{@const plan = m.plan}
+					<div class="mr-6 rounded-2xl border border-line bg-panel p-3">
+						<p class="font-black">{plan.name}</p>
+						<div class="my-2 flex gap-1">
+							{#each { length: plan.weeks } as _, i (i)}
+								<div class="h-1.5 flex-1 rounded-full {plan.deloadWeek === i + 1 ? 'bg-zinc-600' : 'bg-line'}"></div>
+							{/each}
+						</div>
+						<p class="mb-2 text-xs text-zinc-500">
+							{plan.weeks} weeks{plan.deloadWeek ? `, week ${plan.deloadWeek} is a deload` : ''}. {plan.progression}
+						</p>
+						{#each plan.days as d, di (di)}
+							<button
+								onclick={() => (openPlan[`${m.id}:${di}`] = !openPlan[`${m.id}:${di}`])}
+								class="flex w-full justify-between border-t border-line py-1.5 text-left text-[13px]"
+							>
+								<span class="font-semibold">{d.dayOfWeek ? `${d.dayOfWeek} · ` : ''}{d.name}</span>
+								<span class="text-zinc-500">{d.exercises.length} lifts {openPlan[`${m.id}:${di}`] ? '▴' : '▾'}</span>
+							</button>
+							{#if openPlan[`${m.id}:${di}`]}
+								<ul class="mb-2 flex flex-col gap-0.5 pl-1 text-[13px]">
+									{#each d.exercises as x, xi (xi)}
+										<li class="flex justify-between gap-2">
+											<span class={x.exerciseId ? 'text-zinc-300' : 'text-zinc-600 line-through'} title={x.exerciseId ? '' : 'Not in your exercise library — will be skipped'}
+												>{x.name}</span
+											>
+											<span class="shrink-0 tabular-nums text-zinc-500"
+												>{x.sets}×{x.reps}{#if x.weightKg} · <span class="text-zinc-200">{wt(x.weightKg)}</span>{/if}</span
+											>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						{/each}
+						{#if m.saved}
+							<p class="mt-2 rounded-xl bg-accent2/15 py-2 text-center text-sm font-bold text-accent2">
+								✓ Saved
+							</p>
+						{:else}
+							<button
+								onclick={() => savePlan(m)}
+								disabled={busy === m.id}
+								class="mt-2 w-full rounded-xl bg-accent2 py-2 text-sm font-bold text-ink disabled:opacity-60"
+								>{busy === m.id ? 'Saving…' : data.program?.name === plan.name ? 'Save changes' : `Save as ${plan.days.length} workouts`}</button
+							>
+						{/if}
+					</div>
+				{/if}
+
+				{#if m.progress}
+					{@const pr = m.progress}
+					<div class="mr-6 rounded-2xl border border-line bg-panel p-3">
+						<p class="mb-1 text-xs font-bold uppercase tracking-wider text-zinc-400">
+							{pr.workoutName}{pr.readiness != null ? ` · readiness ${pr.readiness}` : ''}
+						</p>
+						{#each pr.adjustments as a (a.name)}
+							<label class="flex items-start gap-3 border-t border-line py-2 first-of-type:border-0">
+								<input
+									type="checkbox"
+									disabled={!!m.applied}
+									checked={m.applied ? m.applied.includes(a.name) : !unchecked[key(m, a.name)]}
+									onchange={(e) => (unchecked[key(m, a.name)] = !e.currentTarget.checked)}
+									class="mt-1 h-4 w-4 accent-[var(--color-accent2)]"
+								/>
+								<span class="min-w-0 flex-1">
+									<span class="flex justify-between gap-2 text-[13px]">
+										<span class="font-semibold">{a.name}</span>
+										<span class="shrink-0 tabular-nums"
+											><b>{wt(a.suggestedWeightKg)}</b> × {a.suggestedReps}
+											<span class="text-zinc-500">{a.deltaPct > 0 ? '+' : ''}{a.deltaPct}%</span></span
+										>
+									</span>
+									<span class="block text-[11px] text-zinc-500">{a.reason}</span>
+								</span>
+							</label>
+						{/each}
+						{#if m.applied}
+							<p class="mt-2 rounded-xl bg-accent2/15 py-2 text-center text-sm font-bold text-accent2">
+								✓ Applied to {pr.workoutName}
+							</p>
+						{:else if pr.adjustments.length}
+							{@const n = pr.adjustments.filter((a) => !unchecked[key(m, a.name)]).length}
+							<button
+								onclick={() => apply(m)}
+								disabled={busy === m.id || n === 0}
+								class="mt-2 w-full rounded-xl bg-accent py-2 text-sm font-bold text-ink disabled:opacity-60"
+								>{busy === m.id ? 'Applying…' : `Apply ${n} change${n === 1 ? '' : 's'}`}</button
+							>
+						{/if}
+					</div>
+				{/if}
+			{/if}
+		{/each}
+
+		{#if pending}
+			<div class="mr-6 flex items-center gap-3 self-start rounded-2xl rounded-bl-md bg-panel px-3.5 py-2.5 text-zinc-400">
+				<span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
+				{pending}
+			</div>
+		{/if}
+	</div>
+
+	<!-- composer -->
+	<div class="shrink-0 border-t border-line pt-3 pb-4">
+		{#if data.nextWorkout}
+			<button
+				onclick={() => post({ action: 'weights' }, `Working out today's weights for ${data.nextWorkout}…`)}
+				disabled={!!pending}
+				class="mb-2 rounded-full border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-accent disabled:opacity-50"
+				>🏋️ Today's weights for {data.nextWorkout}</button
+			>
+		{/if}
+		<form onsubmit={send} class="flex items-end gap-2 rounded-3xl border border-line bg-panel py-1.5 pr-1.5 pl-4 focus-within:border-accent">
+			<textarea
+				bind:value={text}
+				rows="1"
+				placeholder="Tell the coach what you want…"
+				onkeydown={(e) => {
+					if (e.key === 'Enter' && !e.shiftKey) {
+						e.preventDefault();
+						send();
+					}
+				}}
+				class="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-sm outline-none field-sizing-content"
+			></textarea>
+			<button
+				disabled={!text.trim() || !!pending}
+				aria-label="Send"
+				class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent font-bold text-ink disabled:opacity-40">↑</button
+			>
+		</form>
+	</div>
+</div>

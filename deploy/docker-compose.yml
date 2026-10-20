@@ -60,6 +60,7 @@ services:
       # `claude` CLI uses the personal subscription, OR set ANTHROPIC_API_KEY.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       AGENT_MODEL: "${AGENT_MODEL:-}"
+      AGENT_EFFORT: "${AGENT_EFFORT:-medium}"
     # Option A (personal Claude subscription): mount your ~/.claude creds dir
     # read-only so the `claude` CLI is authenticated inside the container.
     # Uncomment the block below and point at the host path that holds the creds

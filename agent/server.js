@@ -13,6 +13,7 @@ import { execFile } from 'node:child_process';
 
 const PORT = Number(process.env.PORT) || 8787;
 const AGENT_MODEL = process.env.AGENT_MODEL || 'claude-opus-5-5';
+const AGENT_EFFORT = process.env.AGENT_EFFORT || 'medium'; // low | medium | high | xhigh | max
 const CLI_BIN = process.env.CLAUDE_BIN || 'claude';
 const MODEL_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 240_000; // multi-week plans take a while
 
@@ -43,7 +44,7 @@ function callClaudeCli(prompt) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLI_BIN,
-      ['-p', '--output-format', 'json', '--model', AGENT_MODEL],
+      ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', AGENT_EFFORT],
       { timeout: MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (err && !stdout) {
@@ -76,10 +77,14 @@ async function callAnthropicApi(prompt) {
       'content-type': 'application/json',
       'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
+      // if a safety classifier declines, the API retries on a fallback model instead of failing
+      'anthropic-beta': 'server-side-fallback-2026-07-01',
     },
     body: JSON.stringify({
       model: AGENT_MODEL,
-      max_tokens: 8192,
+      max_tokens: 16000,
+      output_config: { effort: AGENT_EFFORT },
+      fallbacks: 'default',
       messages: [{ role: 'user', content: prompt }],
     }),
     signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
@@ -89,6 +94,7 @@ async function callAnthropicApi(prompt) {
     throw new Error(`anthropic api ${res.status}: ${body.slice(0, 300)}`);
   }
   const data = await res.json();
+  if (data.stop_reason === 'refusal') throw new Error('model declined the request');
   const text = (data.content || [])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
@@ -149,6 +155,7 @@ function planPrompt(input) {
     'Task: design a multi-week strength program for this one lifter.',
     `Profile (JSON): ${JSON.stringify(input.profile ?? {})}`,
     `What they asked for, in their words: ${JSON.stringify(input.request ?? '')}`,
+    `Recent conversation, oldest first (context only): ${JSON.stringify(input.conversation ?? [])}`,
     `Training history (JSON; weights in kg; e1rm = estimated 1-rep max): ${JSON.stringify(input.history ?? {})}`,
     `Exercise library — use ONLY these exact names: ${JSON.stringify(input.library ?? [])}`,
     `Produce exactly ${input.profile?.daysPerWeek ?? 4} training days per week, each fitting in ` +
@@ -168,8 +175,10 @@ function planPrompt(input) {
   if (input.currentPlan) {
     lines.push(
       `Their CURRENT program (JSON): ${JSON.stringify(input.currentPlan)}`,
-      'Revise the current program to satisfy the new request. Change only what the request ' +
-        'requires; keep everything else identical. Say what changed in "reply".'
+      'If they ask for a brand-new program, design one from scratch. If they ask to change ' +
+        'something, revise the current program: change only what the request requires and keep ' +
+        'everything else identical, then say what changed in "reply". If they only ask a ' +
+        'question, return the current program unchanged and answer it in "reply".'
     );
   }
   lines.push(`Output ONLY minified JSON of this shape: ${schema}`);
@@ -186,9 +195,12 @@ function progressPrompt(input) {
     `Inputs (JSON): ${JSON.stringify(input)}`,
     'readiness is 0-100: higher = push harder / add load, lower = deload / reduce load or reps.',
     'If readiness is null it was not logged today: assume a normal day, progress conservatively.',
-    'Base each suggestion on lastWeightKg and lastReps vs targetReps, then modulate by readiness',
-    'and context (timeOfDay, kcalBalance deficit, sleepHours, sorenessNote).',
-    'deltaPct is the percent change in load vs lastWeightKg (may be negative).',
+    'targetWeightKg/targetReps are what their program plans for today. When targetWeightKg is set, ' +
+      'start from it: the program already accounts for time off and weekly progression. Use lastWeightKg/lastReps ' +
+      'only to sanity-check (e.g. nudge up if they clearly beat the target last time). When targetWeightKg is ' +
+      'null, base it on lastWeightKg and lastReps vs targetReps.',
+    'Then modulate by readiness and context (timeOfDay, kcalBalance deficit, sleepHours, sorenessNote).',
+    'deltaPct is the percent change vs targetWeightKg when set, else vs lastWeightKg (may be negative).',
     `Write weights inside "reason" and "summary" in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}.`,
     'CRITICAL: each output "name" MUST exactly match the corresponding input exercise name.',
     'Include one adjustment object per input exercise.',

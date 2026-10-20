@@ -1,8 +1,9 @@
 import { json, error } from '@sveltejs/kit';
 import * as repo from '$lib/server/repo';
+import * as coach from '$lib/server/coach';
 import type { RequestHandler } from './$types';
 
-// POST /api/coach/progress/apply body {workoutId, adjustments:[{name,suggestedWeightKg,suggestedReps}]}
+// POST /api/coach/progress/apply body {workoutId, messageId?, adjustments:[{name,suggestedWeightKg,suggestedReps}]}
 // → writes the accepted suggestions into the workout template's targets.
 export const POST: RequestHandler = async ({ request }) => {
 	const b = await request.json().catch(() => null);
@@ -29,5 +30,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		};
 	});
 	repo.updateWorkout(w.id, { exercises });
+	if (typeof b.messageId === 'string')
+		coach.patchChat(b.messageId, { applied: b.adjustments.map((a: { name: string }) => a.name) });
 	return json({ ok: true, changed });
 };

@@ -9,6 +9,7 @@ import { db } from '$lib/db';
 import { sessions } from '$lib/db/schema';
 import { e1rm } from '$lib/metrics';
 import * as repo from './repo';
+import { isoDay } from '$lib/ui';
 
 export const AGENT_URL = env.AGENT_URL || 'http://localhost:8787';
 
@@ -51,7 +52,7 @@ export type CoachPlan = {
 
 export function getProfile(): CoachProfile {
 	const p = repo.getSettings().profile ?? {};
-	const { activeProgram: _, ...profile } = p as Record<string, unknown>;
+	const { activeProgram: _a, chat: _c, ...profile } = p as Record<string, unknown>;
 	return profile as CoachProfile;
 }
 
@@ -183,3 +184,110 @@ export async function callAgent(path: '/plan' | '/progress', body: unknown, fetc
 	return data as Record<string, unknown>;
 }
 
+
+const TIME_OF_DAY = (h: number) => (h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night');
+
+/** Suggested weights for one workout: last top sets + today's readiness → agent /progress. */
+export async function progressFor(workoutId: number, fetchFn: typeof fetch, date = isoDay()) {
+	const workout = repo.getWorkout(workoutId);
+	if (!workout) return null;
+	// Per exercise: the top set (best e1RM) of the last session that included it — not merely
+	// the latest set, which is often a lighter back-off set.
+	const exercises = workout.exercises.map((we) => {
+		const last = lastTopSet(we.exerciseId);
+		return {
+			name: we.exercise.name,
+			lastWeightKg: last?.weightKg ?? null,
+			lastReps: last?.reps ?? null,
+			targetWeightKg: we.targetWeightKg || null,
+			targetReps: we.targetReps
+		};
+	});
+	const r = repo.getReadiness(date);
+	const data = await callAgent(
+		'/progress',
+		{
+			workout: { name: workout.name, exercises },
+			readiness: r?.score ?? null,
+			units: repo.getSettings().units,
+			context: {
+				timeOfDay: TIME_OF_DAY(new Date().getHours()),
+				kcalBalance: r?.kcalBalance ?? null,
+				sleepHours: r?.sleepHours ?? null,
+				sorenessNote: r?.sorenessNote ?? null
+			}
+		},
+		fetchFn
+	);
+	return {
+		workout,
+		readiness: r?.score ?? null,
+		adjustments: (Array.isArray(data.adjustments) ? data.adjustments : []) as Adjustment[],
+		summary: String(data.summary ?? '')
+	};
+}
+
+export type Adjustment = {
+	name: string;
+	suggestedWeightKg: number;
+	suggestedReps: number;
+	deltaPct: number;
+	reason: string;
+};
+
+/** The workout to do next: the one after the last-trained workout of the active program. */
+export function nextWorkoutId(): number | null {
+	const p = getActiveProgram();
+	const ids = p?.workoutIds ?? [];
+	if (!ids.length) return repo.listWorkouts()[0]?.id ?? null;
+	const last = repo.listSessions(200).find((s) => s.workoutId != null && ids.includes(s.workoutId));
+	return last ? ids[(ids.indexOf(last.workoutId!) + 1) % ids.length] : ids[0];
+}
+
+// ---------- chat (kept on the settings row, newest last, capped) ----------
+export type ChatMessage = {
+	id: string;
+	role: 'user' | 'coach';
+	text: string;
+	at: string;
+	error?: boolean;
+	plan?: CoachPlan;
+	rationale?: string;
+	saved?: boolean;
+	progress?: {
+		workoutId: number;
+		workoutName: string;
+		readiness: number | null;
+		adjustments: Adjustment[];
+	};
+	applied?: string[]; // names of adjustments applied
+};
+const CHAT_MAX = 60;
+
+export function getChat(): ChatMessage[] {
+	return ((repo.getSettings().profile ?? {}) as { chat?: ChatMessage[] }).chat ?? [];
+}
+
+function setChat(chat: ChatMessage[]) {
+	const cur = repo.getSettings().profile ?? {};
+	repo.patchSettings({ profile: { ...cur, chat: chat.slice(-CHAT_MAX) } });
+}
+
+export function appendChat(...msgs: Omit<ChatMessage, 'id' | 'at'>[]) {
+	const out = msgs.map((m) => ({ ...m, id: crypto.randomUUID(), at: new Date().toISOString() }));
+	setChat([...getChat(), ...out]);
+	return out;
+}
+
+export function patchChat(id: string, patch: Partial<ChatMessage>) {
+	setChat(getChat().map((m) => (m.id === id ? { ...m, ...patch } : m)));
+}
+
+export const clearChat = () => setChat([]);
+
+/** Same exercises, sets, reps and weights → nothing to save. */
+export function samePlan(a: CoachPlan, b: CoachPlan) {
+	const key = (p: CoachPlan) =>
+		JSON.stringify(p.days.map((d) => d.exercises.map((x) => [x.exerciseId, x.sets, x.reps, x.weightKg])));
+	return key(a) === key(b);
+}

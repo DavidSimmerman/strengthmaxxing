@@ -28,7 +28,7 @@
     "vite": "^8.0.16"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2"
   }
 }

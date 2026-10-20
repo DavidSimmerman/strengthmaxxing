@@ -1,13 +1,14 @@
 import * as repo from '$lib/server/repo';
+import * as coach from '$lib/server/coach';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
-	const workouts = await repo.listWorkouts();
+export const load: PageServerLoad = () => {
+	const program = coach.getActiveProgram();
+	const next = coach.nextWorkoutId();
 	return {
-		workouts: workouts.map((w) => ({
-			id: w.id,
-			name: w.name,
-			exerciseCount: w.exercises.length
-		}))
+		messages: coach.getChat(),
+		profile: coach.getProfile(),
+		program: program ? { name: program.name, weeks: program.weeks, week: coach.programWeek(program) } : null,
+		nextWorkout: next ? (repo.getWorkout(next)?.name ?? null) : null
 	};
 };

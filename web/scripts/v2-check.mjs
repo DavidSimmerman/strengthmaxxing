@@ -121,5 +121,22 @@ const ap = await api('POST', '/api/coach/progress/apply', { workoutId: prog.d.wo
 const w1 = await api('GET', `/api/workouts/${prog.d.workoutIds[0]}`);
 ok(ap.d.changed > 0 && w1.d.exercises[0].targetWeightKg === pr.d.adjustments[0].suggestedWeightKg, 'apply writes targets into the workout');
 
+// --- coach chat: ask → plan card → save marks it → weights → apply marks it
+await api('DELETE', '/api/coach/chat');
+const ch1 = await api('POST', '/api/coach/chat', { text: 'new program please' });
+ok(ch1.s === 200 && ch1.d.messages.length === 2 && ch1.d.messages[1].plan, 'chat: message → coach reply with plan');
+const cm = ch1.d.messages[1];
+await api('POST', '/api/coach/program', { plan: cm.plan, messageId: cm.id });
+let hist2 = await api('GET', '/api/coach/chat');
+ok(hist2.d.messages.find((m) => m.id === cm.id)?.saved === true, 'chat: saving marks the plan message saved');
+const ch2 = await api('POST', '/api/coach/chat', { action: 'weights' });
+const wm = ch2.d.messages[1];
+ok(wm.progress && wm.progress.adjustments.length > 0 && wm.progress.workoutName, `chat: today's weights for ${wm.progress?.workoutName}`);
+await api('POST', '/api/coach/progress/apply', { workoutId: wm.progress.workoutId, messageId: wm.id, adjustments: wm.progress.adjustments.slice(0, 1) });
+hist2 = await api('GET', '/api/coach/chat');
+ok(hist2.d.messages.find((m) => m.id === wm.id)?.applied?.length === 1, 'chat: apply marks only the checked suggestion');
+ok((await api('POST', '/api/coach/chat', { text: '  ' })).s === 400, 'chat: empty text → 400');
+ok((await api('DELETE', '/api/coach/chat')).s === 204 && (await api('GET', '/api/coach/chat')).d.messages.length === 0, 'chat: clear');
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED ✗` : '\nALL V2 CHECKS PASSED ✓');
 process.exit(failed ? 1 : 0);
