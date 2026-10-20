@@ -29,7 +29,8 @@ final class RestAlarmTests: XCTestCase {
         // Keeps buzzing every ~1.2 s — an alarm, not one tap.
         total = 0
         t = 90.25
-        while t <= 96 { total += buzzes(a.tick(now: t)); t += 0.25 }
+        // through 96.25 s: the 5th buzz is due at 90 + 5×1.2, which is 96.000…01 in floating point
+        while t <= 96.25 { total += buzzes(a.tick(now: t)); t += 0.25 }
         XCTAssertEqual(total, 5)
         XCTAssertEqual(a.overRest(now: 96), 6)
     }
