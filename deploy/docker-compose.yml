@@ -30,6 +30,12 @@ services:
       DASHBOARD_PASSWORD: "${DASHBOARD_PASSWORD:-}"
       # Watch motion recordings can be ~1-2 MB; SvelteKit's default body cap is 512 KB.
       BODY_SIZE_LIMIT: "${BODY_SIZE_LIMIT:-4M}"
+      # Behind Coolify's proxy SvelteKit must know its public URL, or browser form posts
+      # (dashboard login, logging sets) are rejected as cross-site.
+      ORIGIN: "${ORIGIN:-https://strengthmaxxing.simmerman.tech}"
+      PROTOCOL_HEADER: "${PROTOCOL_HEADER:-x-forwarded-proto}"
+      HOST_HEADER: "${HOST_HEADER:-x-forwarded-host}"
+      ADDRESS_HEADER: "${ADDRESS_HEADER:-x-forwarded-for}"
       # Dates on the dashboard render in this zone.
       TZ: "${TZ:-America/New_York}"
       # Internal service DNS name; do NOT expose the agent publicly.
