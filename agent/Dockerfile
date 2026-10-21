@@ -15,10 +15,7 @@ ENV PORT=8787
 EXPOSE 8787
 
 # AUTH — pick ONE at deploy time (Coolify):
-#   (a) CLI / personal subscription: mount the user's credentials dir into the
-#       container so the CLI is authenticated, e.g. bind-mount the host
-#       ~/.claude  ->  /root/.claude  (the CLI reads its OAuth creds from there).
-#   (b) API key: set the env var  ANTHROPIC_API_KEY=sk-ant-...  and the service
-#       falls back to the Anthropic Messages API automatically.
-# Optional: AGENT_MODEL (default claude-opus-4-8), PORT (default 8787).
+#   (a) Personal subscription: CLAUDE_CODE_OAUTH_TOKEN=<output of `claude setup-token`>.
+#   (b) API key: ANTHROPIC_API_KEY=sk-ant-... (falls back to the Messages API).
+# Optional: AGENT_MODEL (default claude-opus-5-5), AGENT_EFFORT (default medium).
 CMD ["node", "server.js"]

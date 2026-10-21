@@ -15,9 +15,10 @@ services:
       context: ../web
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      # host:container — Coolify's proxy maps its domain to container port 3000.
-      - "3000:3000"
+    # No host port: Coolify's proxy reaches the container directly. In Coolify set the
+    # web domain as https://strengthmaxxing.simmerman.tech:3000 (":3000" = container port).
+    expose:
+      - "3000"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"
@@ -58,18 +59,12 @@ services:
       PORT: "8787"
       # Auth for the coach: either mount ~/.claude creds (volume below) so the
       # `claude` CLI uses the personal subscription, OR set ANTHROPIC_API_KEY.
+      # Personal Claude subscription: run `claude setup-token` on any machine you're logged
+      # in on and paste the token here (valid 1 year). Leave ANTHROPIC_API_KEY empty then.
+      CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       AGENT_MODEL: "${AGENT_MODEL:-}"
       AGENT_EFFORT: "${AGENT_EFFORT:-medium}"
-    # Option A (personal Claude subscription): mount your ~/.claude creds dir
-    # read-only so the `claude` CLI is authenticated inside the container.
-    # Uncomment the block below and point at the host path that holds the creds
-    # on your Coolify server. Option B (API key) needs no mount — just set
-    # ANTHROPIC_API_KEY above.
-    # NOTE: the agent container runs as root ($HOME=/root), so the CLI reads
-    # /root/.claude — mount the creds there, not /home/node.
-    # volumes:
-    #   - /root/.claude:/root/.claude:ro
     networks:
       - smx
 

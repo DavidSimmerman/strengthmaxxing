@@ -40,12 +40,20 @@ function probeCli() {
 // Call the `claude` CLI in print mode. The CLI returns a JSON envelope whose
 // `result` field is the model's text reply. Prompt is passed on stdin to dodge
 // argv length/escaping limits.
+// The CLI warns about conflicting auth when both are set, and compose passes an empty
+// ANTHROPIC_API_KEY when unused — so the CLI only sees the key when there's no token.
+function cliEnv() {
+  const env = { ...process.env };
+  if (!env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_TOKEN) delete env.ANTHROPIC_API_KEY;
+  return env;
+}
+
 function callClaudeCli(prompt) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLI_BIN,
       ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', AGENT_EFFORT],
-      { timeout: MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+      { timeout: MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: cliEnv() },
       (err, stdout, stderr) => {
         if (err && !stdout) {
           reject(new Error(`claude cli failed: ${err.message} ${stderr || ''}`.trim()));
@@ -282,7 +290,9 @@ const server = createServer(async (req, res) => {
   const url = req.url.split('?')[0];
 
   if (req.method === 'GET' && url === '/health') {
-    return send(res, 200, { ok: true });
+    const auth = process.env.CLAUDE_CODE_OAUTH_TOKEN ? 'subscription token'
+      : process.env.ANTHROPIC_API_KEY ? 'api key' : 'none';
+    return send(res, 200, { ok: true, cli: await probeCli(), auth, model: AGENT_MODEL, effort: AGENT_EFFORT });
   }
 
   if (req.method === 'POST' && (url === '/plan' || url === '/progress')) {

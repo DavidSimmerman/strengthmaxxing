@@ -27,11 +27,12 @@ Deploy both services from the single compose file.
      browser. Blank = reuse `API_TOKEN`.
    - `DB_PATH` — leave as `/data/strengthmaxxing.db` (inside the volume).
    - `AGENT_URL` — leave as `http://agent:8787`.
-   - `ANTHROPIC_API_KEY` — optional (see "Coach auth" below).
+   - `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` — coach auth (see "Coach auth" below).
    - `AGENT_MODEL` — optional model override.
    Mark `API_TOKEN` and `ANTHROPIC_API_KEY` as **secrets**.
-4. **Domain**: assign `https://strengthmaxxing.simmerman.tech` to the **web**
-   service (container port 3000). Leave **agent** with no domain — it must stay
+4. **Domain**: set the **web** service's domain to
+   `https://strengthmaxxing.simmerman.tech:3000` (the `:3000` tells Coolify the
+   container port; the public URL has no port). Leave **agent** with no domain — it must stay
    internal. Don't put Cloudflare Access (or any login page) in front of `/api/*`:
    the Watch can't get past a browser login. The app's own password + token
    protect everything.
@@ -72,16 +73,10 @@ present) while the app is stopped, or via `sqlite3 <db> ".backup"`.
 
 The agent calls Claude two ways; pick one:
 
-- **A) Personal Claude subscription** (via the `claude` CLI). Uncomment the
-  volume mount in `docker-compose.yml`:
-  ```yaml
-  volumes:
-    - /root/.claude:/root/.claude:ro
-  ```
-  Point the host path (left side) at wherever your logged-in `~/.claude` creds
-  live on the Coolify server. The container-side path must stay `/root/.claude`
-  — the agent container runs as root, so that's where the CLI looks. Leave
-  `ANTHROPIC_API_KEY` unset.
+- **A) Personal Claude subscription** (via the `claude` CLI). On any machine where
+  you're logged in to Claude Code, run `claude setup-token` and set the token it prints
+  as `CLAUDE_CODE_OAUTH_TOKEN` (a secret). It lasts a year; rerun `setup-token` and
+  replace it when it expires. Leave `ANTHROPIC_API_KEY` empty.
 - **B) API key**. Set `ANTHROPIC_API_KEY` (a secret) in the agent's environment;
   no mount needed. This is the simplest option for a headless server.
 
