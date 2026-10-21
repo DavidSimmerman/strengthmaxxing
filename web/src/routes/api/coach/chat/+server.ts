@@ -3,7 +3,7 @@ import * as repo from '$lib/server/repo';
 import * as coach from '$lib/server/coach';
 import type { RequestHandler } from './$types';
 
-// GET /api/coach/chat → {messages}
+// GET /api/coach/chat → {messages}. Poll while any message has pending:true.
 export const GET: RequestHandler = () => json({ messages: coach.getChat() });
 
 // DELETE /api/coach/chat → clears the conversation (profile and program are kept)
@@ -16,7 +16,8 @@ export const DELETE: RequestHandler = () => {
  * POST /api/coach/chat
  *   {text}             → the coach answers; may carry a new or revised program
  *   {action:'weights'} → suggested weights for the next workout
- * Stores the user turn and the coach turn; returns {messages: [user, coach]}.
+ * Returns at once with {messages: [user, coach(pending)]}; the coach message is filled in
+ * the background (replies take ~20-90 s, past Cloudflare's 100 s request limit).
  */
 export const POST: RequestHandler = async ({ request, fetch }) => {
 	const b = await request.json().catch(() => null);
@@ -26,28 +27,33 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 		const id = coach.nextWorkoutId();
 		if (id == null) throw error(400, 'Build a program first');
 		const w = repo.getWorkout(id)!;
-		const [user] = coach.appendChat({ role: 'user', text: `What should I lift on ${w.name} today?` });
-		try {
-			const r = (await coach.progressFor(id, fetch))!;
-			const [reply] = coach.appendChat({
-				role: 'coach',
-				text: r.summary,
-				progress: { workoutId: id, workoutName: w.name, readiness: r.readiness, adjustments: r.adjustments }
-			});
-			return json({ messages: [user, reply] });
-		} catch (e) {
-			const [reply] = coach.appendChat({ role: 'coach', text: `I couldn't reach the coach: ${msg(e)}`, error: true });
-			return json({ messages: [user, reply] });
-		}
+		const [user, reply] = coach.appendChat(
+			{ role: 'user', text: `What should I lift on ${w.name} today?` },
+			{ role: 'coach', text: '', pending: true }
+		);
+		void coach
+			.progressFor(id, fetch)
+			.then((r) =>
+				coach.patchChat(reply.id, {
+					pending: false,
+					text: r!.summary,
+					progress: { workoutId: id, workoutName: w.name, readiness: r!.readiness, adjustments: r!.adjustments }
+				})
+			)
+			.catch((e) => fail(reply.id, e));
+		return json({ messages: [user, reply] });
 	}
 
 	const text = typeof b.text === 'string' ? b.text.trim() : '';
 	if (!text) throw error(400, 'text required');
 	const history = coach.getChat().slice(-8).map((m) => `${m.role}: ${m.text}`);
-	const [user] = coach.appendChat({ role: 'user', text });
+	const [user, reply] = coach.appendChat(
+		{ role: 'user', text },
+		{ role: 'coach', text: '', pending: true }
+	);
 	const active = coach.getActiveProgram();
-	try {
-		const data = await coach.callAgent(
+	void coach
+		.callAgent(
 			'/plan',
 			{
 				profile: coach.getProfile(),
@@ -59,19 +65,23 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 				currentPlan: active?.plan
 			},
 			fetch
-		);
-		const plan = coach.resolvePlan(data.plan);
-		const changed = plan && (!active || !coach.samePlan(plan, active.plan));
-		const [reply] = coach.appendChat({
-			role: 'coach',
-			text: String(data.reply || data.rationale || 'Here you go.'),
-			...(changed ? { plan: plan!, rationale: String(data.rationale ?? '') } : {})
-		});
-		return json({ messages: [user, reply] });
-	} catch (e) {
-		const [reply] = coach.appendChat({ role: 'coach', text: `I couldn't reach the coach: ${msg(e)}`, error: true });
-		return json({ messages: [user, reply] });
-	}
+		)
+		.then((data) => {
+			const plan = coach.resolvePlan(data.plan);
+			const changed = plan && (!active || !coach.samePlan(plan, active.plan));
+			coach.patchChat(reply.id, {
+				pending: false,
+				text: String(data.reply || data.rationale || 'Here you go.'),
+				...(changed ? { plan: plan!, rationale: String(data.rationale ?? '') } : {})
+			});
+		})
+		.catch((e) => fail(reply.id, e));
+	return json({ messages: [user, reply] });
 };
 
-const msg = (e: unknown) => (e instanceof Error ? e.message : 'unknown error');
+const fail = (id: string, e: unknown) =>
+	coach.patchChat(id, {
+		pending: false,
+		error: true,
+		text: `I couldn't reach the coach: ${e instanceof Error ? e.message : 'unknown error'}`
+	});

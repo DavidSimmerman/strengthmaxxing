@@ -8,6 +8,7 @@ createServer(async (req, res) => {
 	let body = '';
 	for await (const c of req) body += c;
 	const b = body ? JSON.parse(body) : {};
+	await new Promise((r) => setTimeout(r, Number(process.env.FAKE_DELAY_MS) || 0)); // simulate a slow model
 	const send = (o) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
 	if (req.url === '/plan') {
 		const lib = b.library ?? [];

@@ -21,8 +21,26 @@
 		scrollDown();
 	});
 
+	// Replies are filled in on the server in the background — poll until none are pending.
+	const waiting = $derived(messages.some((m) => m.pending));
+	$effect(() => {
+		if (!waiting) return;
+		const t = setInterval(async () => {
+			const res = await fetch('/api/coach/chat').catch(() => null);
+			if (!res?.ok) return;
+			const out = await res.json();
+			messages = out.messages;
+			if (!out.messages.some((m: ChatMessage) => m.pending)) {
+				pending = null;
+				scrollDown();
+				invalidateAll();
+			}
+		}, 2500);
+		return () => clearInterval(t);
+	});
+
 	async function post(body: object, label: string, optimistic?: string) {
-		if (pending) return;
+		if (pending || waiting) return;
 		pending = label;
 		const tmpId = 'tmp';
 		if (optimistic) messages.push({ id: tmpId, role: 'user', text: optimistic, at: new Date().toISOString() });
@@ -36,6 +54,7 @@
 			const out = await res.json().catch(() => ({}));
 			if (!res.ok) throw new Error(out.message || `Coach unavailable (${res.status})`);
 			messages = [...messages.filter((m) => m.id !== tmpId), ...out.messages];
+			return; // the reply arrives via polling; `pending` clears there
 		} catch (e) {
 			messages = messages.filter((m) => m.id !== tmpId);
 			messages.push({
@@ -45,10 +64,9 @@
 				error: true,
 				at: new Date().toISOString()
 			});
-		} finally {
-			pending = null;
-			scrollDown();
 		}
+		pending = null;
+		scrollDown();
 	}
 
 	function send(e?: SubmitEvent) {
@@ -234,7 +252,9 @@
 		{/if}
 
 		{#each messages as m (m.id)}
-			{#if m.role === 'user'}
+			{#if m.pending}
+				<!-- shown by the spinner below -->
+			{:else if m.role === 'user'}
 				<div class="ml-10 self-end rounded-2xl rounded-br-md bg-accent px-3.5 py-2.5 whitespace-pre-wrap text-ink">
 					{m.text}
 				</div>
@@ -341,10 +361,10 @@
 			{/if}
 		{/each}
 
-		{#if pending}
+		{#if pending || waiting}
 			<div class="mr-6 flex items-center gap-3 self-start rounded-2xl rounded-bl-md bg-panel px-3.5 py-2.5 text-zinc-400">
 				<span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
-				{pending}
+				{pending ?? 'The coach is working on it — this can take up to a minute.'}
 			</div>
 		{/if}
 	</div>
@@ -354,7 +374,7 @@
 		{#if data.nextWorkout}
 			<button
 				onclick={() => post({ action: 'weights' }, `Working out today's weights for ${data.nextWorkout}…`)}
-				disabled={!!pending}
+				disabled={!!pending || waiting}
 				class="mb-2 rounded-full border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-accent disabled:opacity-50"
 				>🏋️ Today's weights for {data.nextWorkout}</button
 			>
@@ -373,7 +393,7 @@
 				class="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-sm outline-none field-sizing-content"
 			></textarea>
 			<button
-				disabled={!text.trim() || !!pending}
+				disabled={!text.trim() || !!pending || waiting}
 				aria-label="Send"
 				class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent font-bold text-ink disabled:opacity-40">↑</button
 			>

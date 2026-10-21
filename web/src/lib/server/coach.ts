@@ -251,6 +251,7 @@ export type ChatMessage = {
 	text: string;
 	at: string;
 	error?: boolean;
+	pending?: boolean; // coach still working (replies run in the background)
 	plan?: CoachPlan;
 	rationale?: string;
 	saved?: boolean;
@@ -264,8 +265,17 @@ export type ChatMessage = {
 };
 const CHAT_MAX = 60;
 
+const PENDING_MAX_MS = 6 * 60_000;
+
 export function getChat(): ChatMessage[] {
-	return ((repo.getSettings().profile ?? {}) as { chat?: ChatMessage[] }).chat ?? [];
+	const chat = ((repo.getSettings().profile ?? {}) as { chat?: ChatMessage[] }).chat ?? [];
+	// A reply the server lost (restart mid-request) would spin forever — give up on it.
+	const now = Date.now();
+	return chat.map((m) =>
+		m.pending && now - Date.parse(m.at) > PENDING_MAX_MS
+			? { ...m, pending: false, error: true, text: 'The coach took too long. Try again.' }
+			: m
+	);
 }
 
 function setChat(chat: ChatMessage[]) {
