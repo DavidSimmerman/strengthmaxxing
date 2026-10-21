@@ -327,16 +327,44 @@ export function deleteSet(sessionId: number, setId: number) {
 /** Sets can change after finish (late watch sync, edits) — keep cached rollups true. */
 function recomputeIfFinished(sessionId: number) {
 	const s = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
-	if (s?.endedAt) db.update(sessions).set(rollups(s, s.endedAt)).where(eq(sessions.id, sessionId)).run();
+	if (!s?.endedAt) return;
+	const r = rollups(s, s.endedAt);
+	// measured calories (watch / heart rate) stay; only the MET estimate follows the sets
+	db.update(sessions)
+		.set(s.kcalSource === 'estimate' ? r : { totalVolumeKg: r.totalVolumeKg })
+		.where(eq(sessions.id, sessionId))
+		.run();
 }
 
+export type MeasuredKcal = { activeKcal: number; avgHr?: number | null; kcalSource: 'apple_watch' | 'heart_rate' };
+
 /** Finalize a session: stamp endedAt and cache tonnage + kcal rollups. */
-export function finishSession(id: number, patch?: { notes?: string; bodyweightKg?: number }) {
+export function finishSession(
+	id: number,
+	patch?: { notes?: string; bodyweightKg?: number; measured?: MeasuredKcal }
+) {
 	const s = db.select().from(sessions).where(eq(sessions.id, id)).get();
 	if (!s) return null;
+	const measured = patch?.measured
+		? {
+				estimatedKcal: Math.round(patch.measured.activeKcal),
+				kcalSource: patch.measured.kcalSource,
+				avgHr: patch.measured.avgHr ?? null
+			}
+		: null;
 	// Idempotent: a duplicate /finish (client retry) must not restamp endedAt —
 	// that would recompute duration to "now" and inflate the kcal estimate.
-	if (s.endedAt) return s;
+	// A repeat that carries measured calories (they arrive after the watch saves) is applied.
+	if (s.endedAt) {
+		if (!measured) return s;
+		const { avgHr, ...rest } = measured;
+		return db
+			.update(sessions)
+			.set(avgHr == null ? rest : measured) // a repeat without heart rate keeps the stored one
+			.where(eq(sessions.id, id))
+			.returning()
+			.get();
+	}
 	const bw = patch?.bodyweightKg ?? s.bodyweightKg ?? 80;
 	const endedAt = new Date();
 	return db
@@ -344,6 +372,7 @@ export function finishSession(id: number, patch?: { notes?: string; bodyweightKg
 		.set({
 			endedAt,
 			...rollups({ ...s, bodyweightKg: bw }, endedAt),
+			...measured,
 			bodyweightKg: bw,
 			notes: patch?.notes ?? s.notes
 		})
@@ -467,6 +496,8 @@ export function sessionExport(id: number) {
 		readinessScore: s.readinessScore,
 		totalVolumeKg: s.totalVolumeKg,
 		estimatedKcal: s.estimatedKcal,
+		kcalSource: s.kcalSource,
+		avgHr: s.avgHr,
 		volumeByMuscle: byMuscle,
 		sets: setDetails
 	};

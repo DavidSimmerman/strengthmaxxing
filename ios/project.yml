@@ -43,7 +43,7 @@ targets:
         CFBundleDisplayName: StrengthMaxxing
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSHealthShareUsageDescription: StrengthMaxxing reads your workouts, heart rate and energy to summarize your training.
+        NSHealthShareUsageDescription: StrengthMaxxing reads your heart rate, weight, height, age and sex to calculate the calories you burn lifting.
         NSHealthUpdateUsageDescription: StrengthMaxxing saves your strength workouts to Apple Health so they appear in Fitness and close your rings.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
@@ -73,7 +73,7 @@ targets:
         WKCompanionAppBundleIdentifier: $(APP_BUNDLE_ID)
         WKBackgroundModes: [workout-processing]
         NSMotionUsageDescription: StrengthMaxxing uses motion to count your reps automatically.
-        NSHealthShareUsageDescription: StrengthMaxxing reads heart rate and energy during your workout.
+        NSHealthShareUsageDescription: StrengthMaxxing reads your heart rate, energy and weight during your workout.
         NSHealthUpdateUsageDescription: StrengthMaxxing saves your strength workout to Apple Health.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

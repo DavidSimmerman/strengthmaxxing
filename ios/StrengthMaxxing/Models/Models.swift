@@ -282,8 +282,18 @@ struct Session: Decodable, Identifiable, Hashable {
 
 /// `POST /api/sessions/:id/finish` body.
 struct FinishSessionBody: Codable, Sendable {
-    let notes: String?
-    let bodyweightKg: Double?
+    var notes: String?
+    var bodyweightKg: Double?
+    /// Measured active calories — Apple's (watch) or from heart rate (phone). Omitted when
+    /// unknown, so the server falls back to its estimate.
+    var activeKcal: Double? = nil
+    var avgHr: Double? = nil
+    var kcalSource: KcalSource? = nil
+}
+
+enum KcalSource: String, Codable, Sendable {
+    case appleWatch = "apple_watch"
+    case heartRate = "heart_rate"
 }
 
 // MARK: - Settings (v2)

@@ -103,7 +103,16 @@ final class PhoneSessionViewModel: ObservableObject {
         guard !isFinishing else { return }
         isFinishing = true
         defer { isFinishing = false }
-        let body = FinishSessionBody(notes: nil, bodyweightKg: settings.bodyweightKg)
+        // Calories from the heart rate Health recorded during the session (your watch, if worn),
+        // with your weight/age/sex from Health. Without enough heart rate the server estimates.
+        let start = ISO8601.parse(session.startedAt) ?? startedAt
+        var body = FinishSessionBody(notes: nil, bodyweightKg: settings.bodyweightKg)
+        if let profile = await health.bodyProfile(fallbackWeightKg: nil) { body.bodyweightKg = profile.weightKg }
+        if let hr = await health.heartRateCalories(start: start, end: Date(), fallbackWeightKg: settings.bodyweightKg) {
+            body.activeKcal = hr.kcal
+            body.avgHr = hr.avgHr
+            body.kcalSource = .heartRate
+        }
         do {
             let finalized = try await api.finishSession(id: session.id, body)
             self.session = finalized

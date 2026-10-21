@@ -81,3 +81,13 @@ enum Units {
         return toKg(v, unit: unit)
     }
 }
+
+/// The API's ISO-8601 timestamps, with or without fractional seconds.
+enum ISO8601 {
+    static func parse(_ s: String?) -> Date? {
+        guard let s else { return nil }
+        let frac = ISO8601DateFormatter()
+        frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return frac.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+    }
+}

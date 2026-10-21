@@ -34,12 +34,22 @@ final class WatchWorkoutSession: NSObject, ObservableObject {
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             share.insert(energy); read.insert(energy)
         }
-        if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { read.insert(hr) }
+        for id: HKQuantityTypeIdentifier in [.heartRate, .bodyMass] {
+            if let t = HKObjectType.quantityType(forIdentifier: id) { read.insert(t) }
+        }
         try? await store.requestAuthorization(toShare: share, read: read)
     }
 
+    /// Latest body weight from Health (kg), for the server's fallback estimate.
+    func latestBodyMassKg() async -> Double? {
+        await HealthReads.latestQuantity(.bodyMass, unit: .gramUnit(with: .kilo), store: store)
+    }
+
+    private var workoutName: String?
+
     /// Begin the live workout session.
-    func start() {
+    func start(name: String? = nil) {
+        workoutName = name
         guard HKHealthStore.isHealthDataAvailable(), session == nil else { return }
         let config = HKWorkoutConfiguration()
         config.activityType = .traditionalStrengthTraining
@@ -77,18 +87,34 @@ final class WatchWorkoutSession: NSObject, ObservableObject {
     func pause() { session?.pause() }
     func resume() { session?.resume() }
 
-    /// End the live session and save the HKWorkout. Returns its dates + energy.
-    func end() async -> (start: Date, end: Date, energyKcal: Double)? {
+    /// End the live session and save the HKWorkout. Returns Apple's active calories and
+    /// average heart rate for the whole session (nil if Health wasn't running/allowed).
+    func end() async -> (start: Date, end: Date, energyKcal: Double?, avgHr: Double?)? {
         guard let session, let builder else { return nil }
         let endDate = Date()
         session.end()
+        var energy: Double?
+        var avgHr: Double?
         do {
             try await builder.endCollection(at: endDate)
+            // Apple's own numbers for the full session — the same ones Fitness shows.
+            if let t = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+                energy = builder.statistics(for: t)?.sumQuantity()?.doubleValue(for: .kilocalorie())
+            }
+            if let t = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+                avgHr = builder.statistics(for: t)?.averageQuantity()?
+                    .doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            }
+            var metadata: [String: Any] = [HKMetadataKeyWorkoutBrandName: "StrengthMaxxing",
+                                           HKMetadataKeyIndoorWorkout: true]
+            if let workoutName { metadata["workoutName"] = workoutName }
+            try await builder.addMetadata(metadata)
             _ = try await builder.finishWorkout()
         } catch {
             print("HK finish failed: \(error)")
         }
-        let result = (start: startDate ?? endDate, end: endDate, energyKcal: activeEnergyKcal)
+        let result = (start: startDate ?? endDate, end: endDate,
+                      energyKcal: energy ?? (activeEnergyKcal > 0 ? activeEnergyKcal : nil), avgHr: avgHr)
         isActive = false
         self.session = nil
         self.builder = nil

@@ -165,3 +165,12 @@ survives reinstalls and is shared across watches.
 - `POST /api/coach/progress` now bases each exercise on the **top set** (best e1RM) of its last
   session. `POST /api/coach/progress/apply` body `{workoutId, adjustments}` writes accepted
   suggestions into the template's `targetWeightKg` / `targetReps`.
+
+### Calories (v2.1)
+- `POST /api/sessions/:id/finish` also takes `activeKcal` (0-5000), `avgHr` (30-250) and
+  `kcalSource` (`apple_watch` | `heart_rate`). When present they replace the server's MET
+  estimate. Sending them again after finish updates only the calories, so the watch can
+  report Apple's number after the Apple workout saves.
+- Sessions carry `kcalSource` (`apple_watch` | `heart_rate` | `estimate`) and `avgHr`.
+  `estimatedKcal` is **active** kcal (above resting), same meaning as Apple's Active Calories.
+  Measured values are never overwritten when sets change later; the estimate is recomputed.

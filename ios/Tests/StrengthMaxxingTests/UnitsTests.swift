@@ -71,3 +71,23 @@ final class UnitsTests: XCTestCase {
         XCTAssertNil(Units.parse("-5", unit: .lb))
     }
 }
+
+final class ISO8601Tests: XCTestCase {
+    func testParsesServerTimestamps() {
+        XCTAssertEqual(ISO8601.parse("2026-10-20T17:35:59.261Z")?.timeIntervalSince1970 ?? 0, 1792517759.261, accuracy: 0.001)
+        XCTAssertEqual(ISO8601.parse("2026-10-20T17:35:59Z")?.timeIntervalSince1970, 1792517759)
+        XCTAssertNil(ISO8601.parse(nil))
+        XCTAssertNil(ISO8601.parse("yesterday"))
+    }
+
+    func testFinishBodyOmitsUnknownCalories() throws {
+        let plain = String(data: try JSONEncoder().encode(FinishSessionBody(notes: nil, bodyweightKg: 80)), encoding: .utf8)!
+        XCTAssertFalse(plain.contains("activeKcal"))
+        XCTAssertFalse(plain.contains("kcalSource"))
+        var b = FinishSessionBody(notes: nil, bodyweightKg: 80)
+        b.activeKcal = 312; b.avgHr = 118; b.kcalSource = .appleWatch
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(b)) as! [String: Any]
+        XCTAssertEqual(json["kcalSource"] as? String, "apple_watch")
+        XCTAssertEqual(json["activeKcal"] as? Double, 312)
+    }
+}

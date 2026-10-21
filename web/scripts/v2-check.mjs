@@ -138,5 +138,26 @@ ok(hist2.d.messages.find((m) => m.id === wm.id)?.applied?.length === 1, 'chat: a
 ok((await api('POST', '/api/coach/chat', { text: '  ' })).s === 400, 'chat: empty text → 400');
 ok((await api('DELETE', '/api/coach/chat')).s === 204 && (await api('GET', '/api/coach/chat')).d.messages.length === 0, 'chat: clear');
 
+// --- calories: measured (watch / heart rate) beat the estimate and survive later edits
+{
+	const s0 = (await api('POST', '/api/sessions', { name: 'kcal test' })).d;
+	await api('POST', `/api/sessions/${s0.id}/sets`, { exerciseId: bench.id, reps: 5, weightKg: 100, startedAt: Date.now() - 30000, completedAt: Date.now() });
+	ok((await api('POST', `/api/sessions/${s0.id}/finish`, { activeKcal: 300, kcalSource: 'fitbit' })).s === 400, 'kcal: unknown source → 400');
+	ok((await api('POST', `/api/sessions/${s0.id}/finish`, { activeKcal: -5, kcalSource: 'apple_watch' })).s === 400, 'kcal: negative → 400');
+	const f = await api('POST', `/api/sessions/${s0.id}/finish`, { activeKcal: 312.4, avgHr: 118, kcalSource: 'apple_watch', bodyweightKg: 84 });
+	ok(f.s === 200 && f.d.estimatedKcal === 312 && f.d.kcalSource === 'apple_watch' && f.d.avgHr === 118, `kcal: watch number stored (${f.d.estimatedKcal}, ${f.d.kcalSource}, ${f.d.avgHr} bpm)`);
+	await api('POST', `/api/sessions/${s0.id}/sets`, { exerciseId: bench.id, reps: 5, weightKg: 100, setIndex: 1 });
+	let g = (await api('GET', `/api/sessions/${s0.id}`)).d;
+	ok(g.estimatedKcal === 312 && g.totalVolumeKg === 1000, 'kcal: late set updates volume but keeps the watch calories');
+	const again = await api('POST', `/api/sessions/${s0.id}/finish`, { activeKcal: 330, kcalSource: 'apple_watch' });
+	ok(again.d.estimatedKcal === 330, 'kcal: repeat finish with new watch number updates calories');
+	const e = (await api('POST', '/api/sessions', { name: 'estimate test' })).d;
+	await api('POST', `/api/sessions/${e.id}/sets`, { exerciseId: bench.id, reps: 5, weightKg: 100 });
+	const ef = (await api('POST', `/api/sessions/${e.id}/finish`, {})).d;
+	ok(ef.kcalSource === 'estimate' && ef.avgHr === null, `kcal: no measurement → estimate (${ef.estimatedKcal} kcal)`);
+	const ex = (await api('GET', `/api/export`)).d.sessions.find((x) => x.id === s0.id);
+	ok(ex?.kcalSource === 'apple_watch' && ex?.avgHr === 118, 'kcal: export carries source + avg heart rate');
+}
+
 console.log(failed ? `\n${failed} CHECK(S) FAILED ✗` : '\nALL V2 CHECKS PASSED ✓');
 process.exit(failed ? 1 : 0);

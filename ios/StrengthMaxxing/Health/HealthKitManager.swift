@@ -32,9 +32,11 @@ final class HealthKitManager: ObservableObject {
 
     private var typesToRead: Set<HKObjectType> {
         var set: Set<HKObjectType> = [HKObjectType.workoutType()]
-        if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { set.insert(hr) }
-        if let energy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
-            set.insert(energy)
+        for id: HKQuantityTypeIdentifier in [.heartRate, .activeEnergyBurned, .bodyMass, .height] {
+            if let t = HKObjectType.quantityType(forIdentifier: id) { set.insert(t) }
+        }
+        for id: HKCharacteristicTypeIdentifier in [.dateOfBirth, .biologicalSex] {
+            if let t = HKObjectType.characteristicType(forIdentifier: id) { set.insert(t) }
         }
         return set
     }
@@ -52,6 +54,46 @@ final class HealthKitManager: ObservableObject {
         } catch {
             isAuthorized = false
         }
+    }
+
+    // MARK: - Reading the body profile + heart rate (for calories)
+
+    /// Weight, age, sex and height from Health; nil without a weight. Each read fails soft
+    /// (denied / never entered) to the unknown default.
+    func bodyProfile(fallbackWeightKg: Double?) async -> BodyProfile? {
+        guard let weight = await HealthReads.latestQuantity(.bodyMass, unit: .gramUnit(with: .kilo), store: store)
+                ?? fallbackWeightKg else { return nil }
+        var age = 35.0
+        if let dob = try? store.dateOfBirthComponents(), let year = dob.year {
+            age = Double(Calendar.current.component(.year, from: Date()) - year)
+        }
+        var sex = BiologicalSex.unknown
+        switch (try? store.biologicalSex())?.biologicalSex {
+        case .some(.male): sex = .male
+        case .some(.female): sex = .female
+        default: break
+        }
+        let height = await HealthReads.latestQuantity(.height, unit: .meterUnit(with: .centi), store: store)
+        return BodyProfile(weightKg: weight, ageYears: age, sex: sex, heightCm: height)
+    }
+
+    /// Active calories + average heart rate from the heart rate Health recorded (e.g. by the
+    /// watch on your wrist) between start and end. Nil when there isn't enough heart rate.
+    func heartRateCalories(start: Date, end: Date, fallbackWeightKg: Double?) async -> (kcal: Double, avgHr: Double)? {
+        guard isHealthDataAvailable,
+              let profile = await bodyProfile(fallbackWeightKg: fallbackWeightKg),
+              let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return nil }
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: HKQuery.predicateForSamples(withStart: start, end: end))],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        guard let samples = try? await descriptor.result(for: store) else { return nil }
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        let points = samples.map {
+            HeartRateSample(t: $0.startDate.timeIntervalSince1970, bpm: $0.quantity.doubleValue(for: bpm))
+        }
+        return HeartRateCalories.activeKcal(
+            samples: points, start: start.timeIntervalSince1970, end: end.timeIntervalSince1970, profile: profile)
     }
 
     // MARK: - Writing a workout (phone-side finish path)
@@ -97,7 +139,7 @@ final class HealthKitManager: ObservableObject {
             HKMetadataKeyWorkoutBrandName: "StrengthMaxxing",
             "sessionId": session.id,
         ]
-        if let name = session.name { metadata["templateName"] = name }
+        if let name = session.name { metadata["workoutName"] = name }
         if let volume = session.totalVolumeKg { metadata["totalVolumeKg"] = volume }
         metadata[HKMetadataKeyIndoorWorkout] = true
         try await builder.addMetadata(metadata)
@@ -113,17 +155,8 @@ final class HealthKitManager: ObservableObject {
         fallbackStart: Date,
         fallbackEnd: Date
     ) async throws {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoNoFrac = ISO8601DateFormatter()
-
-        func parse(_ s: String?) -> Date? {
-            guard let s else { return nil }
-            return iso.date(from: s) ?? isoNoFrac.date(from: s)
-        }
-
-        let start = parse(session.startedAt) ?? fallbackStart
-        let end = parse(session.endedAt) ?? fallbackEnd
+        let start = ISO8601.parse(session.startedAt) ?? fallbackStart
+        let end = ISO8601.parse(session.endedAt) ?? fallbackEnd
         try await saveStrengthWorkout(
             start: start, end: end, energyKcal: session.estimatedKcal, session: session
         )

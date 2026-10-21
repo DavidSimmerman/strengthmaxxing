@@ -62,7 +62,11 @@ export const sessions = sqliteTable('sessions', {
 	extraExerciseIds: text({ mode: 'json' }).$type<number[]>(),
 	// cached rollups (recomputed on session end) so exports/reports stay cheap:
 	totalVolumeKg: real().notNull().default(0),
-	estimatedKcal: real().notNull().default(0),
+	estimatedKcal: real().notNull().default(0), // active kcal (matches Apple's "Active Calories")
+	// where estimatedKcal came from: apple_watch (the watch's live workout), heart_rate (phone,
+	// from heart-rate samples), estimate (MET formula). Non-estimate values are never recomputed.
+	kcalSource: text().notNull().default('estimate'),
+	avgHr: real(), // bpm over the session, when a heart-rate source exists
 	exportedAt: integer({ mode: 'timestamp' }) // when pushed to healthmaxxing
 });
 

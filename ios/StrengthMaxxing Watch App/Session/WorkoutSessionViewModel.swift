@@ -104,7 +104,7 @@ final class WorkoutSessionViewModel: ObservableObject {
         RestAlarmController.requestNotificationPermission()
         Task {
             await workout.requestAuthorization()
-            workout.start()
+            workout.start(name: template.name)
         }
         currentIndex = 0
         beginCurrentSet()
@@ -268,9 +268,17 @@ final class WorkoutSessionViewModel: ObservableObject {
         rest.skip()
         motion.stop()
         recordingTask = nil
-        sync.enqueue(.finishSession(sessionClientId: sessionClientId,
-                                    body: FinishSessionBody(notes: nil, bodyweightKg: settings.bodyweightKg)))
-        _ = await workout.end()   // saves the HKWorkout (rings) on the watch
+        // Save the Apple workout first so its calories + heart rate go to the server with the
+        // finish (the dashboard then shows the same number as Fitness).
+        let hk = await workout.end()
+        var body = FinishSessionBody(notes: nil,
+                                     bodyweightKg: await workout.latestBodyMassKg() ?? settings.bodyweightKg)
+        if let kcal = hk?.energyKcal, kcal > 0 {
+            body.activeKcal = kcal
+            body.avgHr = hk?.avgHr
+            body.kcalSource = .appleWatch
+        }
+        sync.enqueue(.finishSession(sessionClientId: sessionClientId, body: body))
         phase = .finished
     }
 }

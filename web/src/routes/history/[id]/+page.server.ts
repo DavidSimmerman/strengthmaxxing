@@ -92,6 +92,8 @@ export const load: PageServerLoad = async ({ params }) => {
 					: null,
 			totalVolumeKg: s.totalVolumeKg,
 			estimatedKcal: s.estimatedKcal,
+			kcalSource: s.kcalSource,
+			avgHr: s.avgHr,
 			readinessScore: s.readinessScore,
 			bodyweightKg: s.bodyweightKg
 		},

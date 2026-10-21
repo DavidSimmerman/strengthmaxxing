@@ -42,11 +42,11 @@ export function repFatigue(offsetsMs: number[]): {
 }
 
 /**
- * Estimated energy burn (kcal) for a session.
- * MET formula: kcal/min = MET · 3.5 · bodyweightKg / 200. Working sets burn at the exercise's
- * MET; rest between sets burns at ~1.5 MET.
- * ponytail: population-average MET model — good enough for trend tracking, not lab calorimetry.
- * Calibrate against healthmaxxing's HR-based burn if you want per-user accuracy.
+ * Estimated ACTIVE energy (kcal) for a session — what Apple calls Active Calories, i.e. on top
+ * of what you'd burn at rest anyway, so it's comparable with the watch's number.
+ * MET formula: kcal/min = (MET − 1) · 3.5 · bodyweightKg / 200. Working sets burn at the
+ * exercise's MET; rest between sets at ~1.5 MET.
+ * Only a fallback: sessions with Apple Watch or heart-rate calories keep those instead.
  */
 export function estimateKcal(
 	workingSets: { met: number; activeMin: number }[],
@@ -55,8 +55,8 @@ export function estimateKcal(
 ): number {
 	const bw = bodyweightKg > 0 ? bodyweightKg : 80;
 	const factor = (3.5 * bw) / 200;
-	const active = workingSets.reduce((k, s) => k + s.met * factor * s.activeMin, 0);
-	const rest = 1.5 * factor * restMin;
+	const active = workingSets.reduce((k, s) => k + Math.max(0, s.met - 1) * factor * s.activeMin, 0);
+	const rest = 0.5 * factor * restMin;
 	return Math.round(active + rest);
 }
 

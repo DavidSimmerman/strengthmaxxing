@@ -15,6 +15,19 @@
 	const band = $derived(readinessBand(data.session.readinessScore));
 	let confirmDelete = $state(false);
 
+	const KCAL_LABEL: Record<string, string> = {
+		apple_watch: 'active kcal · watch',
+		heart_rate: 'active kcal · heart rate'
+	};
+	const stats = $derived([
+		{ v: fmtVol(data.session.totalVolumeKg), l: 'volume', c: 'text-accent' },
+		{ v: num(data.session.estimatedKcal), l: KCAL_LABEL[data.session.kcalSource] ?? 'active kcal · estimate', c: 'text-zinc-100' },
+		{ v: data.session.durationSec ? mmss(data.session.durationSec) : '—', l: 'duration', c: 'text-zinc-100' },
+		data.session.avgHr
+			? { v: `${Math.round(data.session.avgHr)}`, l: 'avg heart rate', c: 'text-zinc-100' }
+			: { v: wt(data.session.bodyweightKg), l: 'bodyweight', c: 'text-zinc-100' }
+	]);
+
 	// tap a set to fix it (e.g. the watch miscounted) — rollups recompute server-side
 	let editingId = $state<number | null>(null);
 	let editReps = $state(0);
@@ -44,7 +57,7 @@
 
 <!-- summary stats -->
 <div class="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-	{#each [{ v: fmtVol(data.session.totalVolumeKg), l: 'volume', c: 'text-accent' }, { v: num(data.session.estimatedKcal), l: 'kcal', c: 'text-zinc-100' }, { v: data.session.durationSec ? mmss(data.session.durationSec) : '—', l: 'duration', c: 'text-zinc-100' }, { v: wt(data.session.bodyweightKg), l: 'bodyweight', c: 'text-zinc-100' }] as stat (stat.l)}
+	{#each stats as stat (stat.l)}
 		<div class="rounded-xl border border-line bg-panel px-3 py-3">
 			<div class="text-lg font-black tabular-nums {stat.c}">{stat.v}</div>
 			<div class="text-[10px] uppercase tracking-wider text-zinc-500">{stat.l}</div>
