@@ -15,10 +15,10 @@ services:
       context: ../web
       dockerfile: Dockerfile
     restart: unless-stopped
-    # No host port: Coolify's proxy reaches the container directly. In Coolify set the
-    # web domain as https://strengthmaxxing.simmerman.tech:3000 (":3000" = container port).
-    expose:
-      - "3000"
+    # Published on the server so a Cloudflare tunnel can reach it at localhost:3417
+    # (3417, not 3000, to stay clear of other apps on the same server). No Coolify domain needed.
+    ports:
+      - "${WEB_HOST_PORT:-3417}:3000"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"

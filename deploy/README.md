@@ -30,11 +30,11 @@ Deploy both services from the single compose file.
    - `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` — coach auth (see "Coach auth" below).
    - `AGENT_MODEL` — optional model override.
    Mark `API_TOKEN` and `ANTHROPIC_API_KEY` as **secrets**.
-4. **Domain**: set the **web** service's domain to
-   `https://strengthmaxxing.simmerman.tech:3000` (the `:3000` tells Coolify the
-   container port; the public URL has no port). Leave **agent** with no domain — it must stay
-   internal. Don't put Cloudflare Access (or any login page) in front of `/api/*`:
-   the Watch can't get past a browser login. The app's own password + token
+4. **Cloudflare tunnel**: add a published application route
+   `strengthmaxxing.simmerman.tech` → HTTP → `localhost:3417` (the host port in the
+   compose file; override with `WEB_HOST_PORT`). Leave Coolify's domain fields empty, and
+   give **agent** no route: it must stay internal. Don't put Cloudflare Access in front of
+   `/api/*`: the Watch can't get past a browser login. The app's own password + token
    protect everything.
 5. Deploy. First boot runs SQLite migrations automatically (web's
    `hooks.server.ts`).
