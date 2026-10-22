@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Pencil } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import RepTimeline from '$lib/components/RepTimeline.svelte';
 	import { num, mmss, dateTime, muscleColor, readinessBand, supersetLabel } from '$lib/ui';
@@ -151,7 +152,7 @@
 								<span class="text-zinc-600">×</span>
 								<span class="font-semibold">{wt(s.weightKg)}</span>
 								{#if s.rpe}<span class="text-xs text-zinc-500">RPE {s.rpe}</span>{/if}
-								<span class="ml-auto text-xs text-zinc-500">e1RM {wt(s.e1rmKg)} ✎</span>
+								<span class="ml-auto text-xs text-zinc-500">e1RM {wt(s.e1rmKg)} <Pencil class="ml-1 inline h-3 w-3" /></span>
 							</button>
 							{#if s.repTimeline.length >= 3}
 								<div class="mt-2 border-t border-line pt-2">

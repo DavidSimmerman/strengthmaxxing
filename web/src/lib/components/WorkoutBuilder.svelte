@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { X } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
 	import { supersetLabel } from '$lib/ui';
@@ -145,7 +146,7 @@
 							type="button"
 							onclick={() => remove(i)}
 							class="grid h-7 w-7 place-items-center rounded text-zinc-500 hover:bg-red-500/20 hover:text-red-400"
-							aria-label="remove">✕</button
+							aria-label="remove"><X class="h-4 w-4" /></button
 						>
 					</div>
 				</div>

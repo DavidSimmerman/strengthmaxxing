@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { X, Trophy } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
@@ -53,7 +54,7 @@
 		<p class="text-[11px] font-bold uppercase tracking-widest text-accent">Live session</p>
 		<h1 class="truncate text-2xl font-black tracking-tight">{data.session.name}</h1>
 	</div>
-	<a href="/history" class="text-sm text-zinc-500 hover:text-zinc-300" aria-label="close">✕</a>
+	<a href="/history" class="text-sm text-zinc-500 hover:text-zinc-300" aria-label="close"><X class="h-5 w-5" /></a>
 </header>
 
 <!-- live stats bar -->
@@ -75,7 +76,7 @@
 </div>
 
 {#if prFlash}
-	<div class="mb-3 rounded-2xl bg-accent2 px-4 py-3 text-center font-black text-ink">🏆 {prFlash}</div>
+	<div class="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-accent2 px-4 py-3 font-black text-ink"><Trophy class="h-5 w-5" />{prFlash}</div>
 {/if}
 
 <!-- sticky rest timer -->

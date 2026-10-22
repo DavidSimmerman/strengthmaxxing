@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Medal, Dumbbell } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Ring from '$lib/components/Ring.svelte';
 	import { num, dur, readinessBand, shortDate } from '$lib/ui';
@@ -156,7 +157,7 @@
 					class="flex items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3"
 					style="animation: slideup 0.4s {i * 0.05}s both ease-out"
 				>
-					<span class="text-lg">{i === 0 ? '🥇' : '🏋️'}</span>
+					{#if i === 0}<Medal class="h-5 w-5 shrink-0 text-accent" />{:else}<Dumbbell class="h-5 w-5 shrink-0 text-zinc-500" />{/if}
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-semibold">{pr.exercise}</p>
 						<p class="text-xs text-zinc-500">{pr.reps}×{wt(pr.weightKg)} · {shortDate(pr.when)}</p>

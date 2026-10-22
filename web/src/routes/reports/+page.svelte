@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { TriangleAlert } from '@lucide/svelte';
 	import LineChart from '$lib/components/LineChart.svelte';
 	import BarChart from '$lib/components/BarChart.svelte';
 	import Scatter from '$lib/components/Scatter.svelte';
@@ -120,7 +121,7 @@
 							href="/history/{s.id}"
 							class="flex items-center gap-3 rounded-xl border border-accent/30 bg-accent/[0.05] px-3 py-2"
 						>
-							<span class="text-lg">⚠️</span>
+							<TriangleAlert class="h-5 w-5 shrink-0 text-accent" />
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-semibold">{s.name}</p>
 								<p class="text-xs text-zinc-500">{shortDate(s.startedAt)}</p>
@@ -138,7 +139,7 @@
 				</div>
 			{:else}
 				<p class="rounded-xl bg-accent2/[0.06] px-3 py-4 text-center text-sm text-accent2">
-					No off-days flagged — you've been training consistently. 💪
+					No off-days flagged — you've been training consistently.
 				</p>
 			{/if}
 		</section>

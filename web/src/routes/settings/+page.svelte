@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Check } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	let { data, form } = $props();
 
@@ -43,7 +44,7 @@
 		</span>
 	</label>
 	{#if form?.error}<p class="text-sm text-accent">{form.error}</p>{/if}
-	<button class="rounded-xl bg-accent py-3 font-bold text-ink">{form?.saved ? '✓ Saved' : 'Save'}</button>
+	<button class="rounded-xl bg-accent py-3 font-bold text-ink">{#if form?.saved}<Check class="mr-1 inline h-4 w-4" />Saved{:else}Save{/if}</button>
 </form>
 
 <section class="mb-6 rounded-2xl border border-line bg-panel p-5">

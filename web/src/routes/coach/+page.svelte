@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Check, Dumbbell } from '@lucide/svelte';
 	import { tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { wt } from '$lib/units.svelte';
@@ -303,7 +304,7 @@
 						{/each}
 						{#if m.saved}
 							<p class="mt-2 rounded-xl bg-accent2/15 py-2 text-center text-sm font-bold text-accent2">
-								✓ Saved
+								<Check class="mr-1 inline h-4 w-4" />Saved
 							</p>
 						{:else}
 							<button
@@ -345,7 +346,7 @@
 						{/each}
 						{#if m.applied}
 							<p class="mt-2 rounded-xl bg-accent2/15 py-2 text-center text-sm font-bold text-accent2">
-								✓ Applied to {pr.workoutName}
+								<Check class="mr-1 inline h-4 w-4" />Applied to {pr.workoutName}
 							</p>
 						{:else if pr.adjustments.length}
 							{@const n = pr.adjustments.filter((a) => !unchecked[key(m, a.name)]).length}
@@ -376,7 +377,7 @@
 				onclick={() => post({ action: 'weights' }, `Working out today's weights for ${data.nextWorkout}…`)}
 				disabled={!!pending || waiting}
 				class="mb-2 rounded-full border border-line px-3 py-1.5 text-xs text-zinc-300 hover:border-accent disabled:opacity-50"
-				>🏋️ Today's weights for {data.nextWorkout}</button
+				><Dumbbell class="mr-1 inline h-3.5 w-3.5" />Today's weights for {data.nextWorkout}</button
 			>
 		{/if}
 		<form onsubmit={send} class="flex items-end gap-2 rounded-3xl border border-line bg-panel py-1.5 pr-1.5 pl-4 focus-within:border-accent">

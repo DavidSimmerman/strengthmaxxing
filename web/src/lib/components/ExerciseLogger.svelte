@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Pencil, Check } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
 	import { shortDate } from '$lib/ui';
@@ -143,7 +144,7 @@
 						<span class="font-semibold">{s.reps} <span class="text-zinc-500">reps</span></span>
 						<span class="text-zinc-600">×</span>
 						<span class="font-semibold">{wt(s.weightKg)}</span>
-						<span class="ml-auto text-xs text-zinc-500">{vol(s.volume)} vol ✎</span>
+						<span class="ml-auto text-xs text-zinc-500">{vol(s.volume)} vol <Pencil class="ml-1 inline h-3 w-3" /></span>
 					</button>
 				{/if}
 			{/each}
@@ -194,7 +195,7 @@
 				class:bg-accent2={justLogged}
 				style="min-width:140px;justify-content:center"
 			>
-				{#if justLogged}✓ Racked{:else}Log set{/if}
+				{#if justLogged}<Check class="h-4 w-4" />Racked{:else}Log set{/if}
 			</button>
 		</div>
 		{#if error}<p class="mt-2 text-right text-sm text-accent">{error}</p>{/if}

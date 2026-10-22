@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Zap, Dumbbell, ChartLine, Bot, Activity, Settings, BicepsFlexed } from '@lucide/svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
@@ -14,12 +15,12 @@
 	const bare = $derived(page.url.pathname === '/login');
 
 	const nav = [
-		{ href: '/', label: 'Today', icon: '⚡' },
-		{ href: '/workouts', label: 'Workouts', icon: '🏋️' },
-		{ href: '/history', label: 'History', icon: '📈' },
-		{ href: '/coach', label: 'Coach', icon: '🤖' },
-		{ href: '/reports', label: 'Reports', icon: '🧬' },
-		{ href: '/settings', label: 'Settings', icon: '⚙️' }
+		{ href: '/', label: 'Today', icon: Zap },
+		{ href: '/workouts', label: 'Workouts', icon: Dumbbell },
+		{ href: '/history', label: 'History', icon: ChartLine },
+		{ href: '/coach', label: 'Coach', icon: Bot },
+		{ href: '/reports', label: 'Reports', icon: Activity },
+		{ href: '/settings', label: 'Settings', icon: Settings }
 	];
 	const active = (href: string) =>
 		href === '/' ? page.url.pathname === '/' : page.url.pathname.startsWith(href);
@@ -43,7 +44,7 @@
 		class="fixed left-0 top-0 hidden h-full w-56 flex-col border-r border-line bg-panel px-4 py-6 md:flex"
 	>
 		<a href="/" class="mb-8 flex items-center gap-2 px-2">
-			<span class="text-2xl">💪</span>
+			<BicepsFlexed class="h-6 w-6 text-accent" strokeWidth={2.25} />
 			<span class="text-lg font-black tracking-tight"
 				>strength<span class="text-accent">maxxing</span></span
 			>
@@ -57,7 +58,7 @@
 						? 'bg-accent/15 text-accent'
 						: 'text-zinc-400 hover:bg-panel2 hover:text-zinc-100'}"
 				>
-					<span>{item.icon}</span>{item.label}
+					<item.icon class="h-4 w-4 shrink-0" />{item.label}
 				</a>
 			{/each}
 		</nav>
@@ -77,7 +78,7 @@
 				class="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium
 					{active(item.href) ? 'text-accent' : 'text-zinc-500'}"
 			>
-				<span class="text-lg">{item.icon}</span>{item.label}
+				<item.icon class="h-5 w-5" />{item.label}
 			</a>
 		{/each}
 	</nav>
