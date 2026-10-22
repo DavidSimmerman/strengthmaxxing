@@ -45,7 +45,7 @@ export function repFatigue(offsetsMs: number[]): {
  * Estimated ACTIVE energy (kcal) for a session — what Apple calls Active Calories, i.e. on top
  * of what you'd burn at rest anyway, so it's comparable with the watch's number.
  * MET formula: kcal/min = (MET − 1) · 3.5 · bodyweightKg / 200. Working sets burn at the
- * exercise's MET; rest between sets at ~1.5 MET.
+ * exercise's MET; rest between sets at ~1.5 MET; never below SESSION_MET for the whole session.
  * Only a fallback: sessions with Apple Watch or heart-rate calories keep those instead.
  */
 export function estimateKcal(
@@ -57,8 +57,16 @@ export function estimateKcal(
 	const factor = (3.5 * bw) / 200;
 	const active = workingSets.reduce((k, s) => k + Math.max(0, s.met - 1) * factor * s.activeMin, 0);
 	const rest = 0.5 * factor * restMin;
-	return Math.round(active + rest);
+	// Rep time alone (~3 s/rep) badly undercounts a lifting session. The Compendium of Physical
+	// Activities rates a whole resistance-training session, rests included, at ~3.5 MET, so
+	// never estimate below that for the session's full length.
+	const totalMin = workingSets.reduce((m, s) => m + s.activeMin, 0) + restMin;
+	const session = (SESSION_MET - 1) * factor * totalMin;
+	return Math.round(Math.max(active + rest, session));
 }
+
+/** Compendium of Physical Activities: resistance training, multiple exercises, 8-15 reps. */
+export const SESSION_MET = 3.5;
 
 /**
  * Daily readiness 0-100 from recovery inputs. Higher = train hard, lower = dial back.
