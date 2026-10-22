@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { Info, Play, X } from '@lucide/svelte';
+	import { enhance } from '$app/forms';
+	import { dateTime } from '$lib/ui';
 	let { data } = $props();
 
 	const ENERGY = ['Drained', 'Low', 'OK', 'Good', 'Great'];
@@ -29,7 +31,23 @@
 		<a href="/" aria-label="Cancel" class="text-zinc-500 hover:text-zinc-300"><X class="h-5 w-5" /></a>
 	</header>
 
-	<form method="POST" onsubmit={() => (starting = true)}>
+	{#each data.open as o (o.id)}
+		<div class="mb-4 rounded-2xl border border-[#f5c518]/40 bg-[#f5c518]/[0.06] p-4 text-sm">
+			<p class="font-semibold text-[#f5c518]">{o.name} is still open</p>
+			<p class="mb-3 text-zinc-400">
+				Started {dateTime(o.startedAt)}. Finish or discard it so its time isn't counted.
+			</p>
+			<div class="flex gap-2">
+				<a href="/session/{o.id}" class="flex-1 rounded-xl border border-line py-2 text-center font-semibold">Open it</a>
+				<form method="POST" action="?/discardOpen" use:enhance class="flex-1">
+					<input type="hidden" name="id" value={o.id} />
+					<button class="w-full rounded-xl border border-line py-2 font-semibold text-red-400">Discard it</button>
+				</form>
+			</div>
+		</div>
+	{/each}
+
+	<form method="POST" action="?/start" onsubmit={() => (starting = true)}>
 		<input type="hidden" name="energy" value={energy} />
 		{#each data.areas as a (a)}<input type="hidden" name="sore_{a}" value={sore[a]} />{/each}
 

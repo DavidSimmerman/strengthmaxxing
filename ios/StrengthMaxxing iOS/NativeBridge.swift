@@ -14,7 +14,8 @@
 //    connectWatch { token, baseURL }         → { result: "sent" | "noWatch" | "notReady" | "failed: …" }
 //    heartRateCalories { start, end }        → { kcal, avgHr, weightKg } | { kcal: null, weightKg }
 //         (epoch ms; heart rate Health recorded in that window, e.g. by the watch)
-//    saveWorkout { start, end, kcal?, name?, sessionId?, volumeKg? } → { saved: true }
+//    saveWorkout { start, end, kcal?, name?, sessionId?, volumeKg?, replace? } → { saved: true, replaced }
+//         replace: first delete this app's earlier workout for the same sessionId
 //
 
 import Foundation
@@ -75,13 +76,17 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
             guard let start = date("start"), let end = date("end") else { return (["error": "start/end required"], nil) }
             await health.requestAuthorization()
             do {
+                var replaced = 0
+                if body["replace"] as? Bool == true, let sid = (body["sessionId"] as? NSNumber)?.intValue {
+                    replaced = try await health.deleteWorkouts(sessionId: sid)
+                }
                 try await health.saveStrengthWorkout(
                     start: start, end: end,
                     energyKcal: (body["kcal"] as? NSNumber)?.doubleValue,
                     sessionId: (body["sessionId"] as? NSNumber)?.intValue,
                     name: body["name"] as? String,
                     volumeKg: (body["volumeKg"] as? NSNumber)?.doubleValue)
-                return (["saved": true], nil)
+                return (["saved": true, "replaced": replaced], nil)
             } catch {
                 return (["error": error.localizedDescription], nil)
             }

@@ -103,6 +103,17 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
+	editTimes: async ({ params, request }) => {
+		const fd = await request.formData();
+		const start = Number(fd.get('startedAt'));
+		const end = Number(fd.get('endedAt'));
+		if (!Number.isFinite(start) || !Number.isFinite(end)) return fail(400, { timeError: 'Pick a start and end' });
+		if (end <= start) return fail(400, { timeError: 'End must be after start' });
+		if (end - start > 6 * 3600_000) return fail(400, { timeError: 'That is over 6 hours, check the times' });
+		const s = repo.updateSessionTimes(Number(params.id), { startedAt: new Date(start), endedAt: new Date(end) });
+		if (!s) return fail(404, { timeError: 'Workout not found' });
+		return { timesSaved: true };
+	},
 	editSet: async ({ params, request }) => {
 		const fd = await request.formData();
 		const reps = Number(fd.get('reps'));

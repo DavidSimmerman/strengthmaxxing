@@ -160,6 +160,28 @@ final class HealthKitManager: ObservableObject {
         _ = try await builder.finishWorkout()
     }
 
+    /// Deletes the workouts THIS app saved for a session (matched by the "sessionId" metadata)
+    /// together with their calorie samples, so a corrected copy can replace them.
+    /// Returns how many workouts were removed. Other apps' data is never touched.
+    func deleteWorkouts(sessionId: Int) async throws -> Int {
+        guard isHealthDataAvailable else { return 0 }
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.workout(NSCompoundPredicate(andPredicateWithSubpredicates: [
+                HKQuery.predicateForObjects(withMetadataKey: "sessionId", allowedValues: [NSNumber(value: sessionId)]),
+                HKQuery.predicateForObjects(from: HKSource.default()),
+            ]))],
+            sortDescriptors: []
+        )
+        let workouts = try await descriptor.result(for: store)
+        for w in workouts {
+            if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+                _ = try? await store.deleteObjects(of: energy, predicate: HKQuery.predicateForObjects(from: w))
+            }
+        }
+        if !workouts.isEmpty { try await store.delete(workouts) }
+        return workouts.count
+    }
+
     /// Convenience: derive start/end from the session's ISO timestamps if present,
     /// otherwise fall back to the supplied bounds.
     func saveStrengthWorkout(

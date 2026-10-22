@@ -98,6 +98,15 @@ export const actions: Actions = {
 		throw redirect(303, `/session/${s.id}`);
 	},
 
+	// throw away an unfinished workout (e.g. started by mistake or left open overnight)
+	discard: async ({ request }) => {
+		const id = Number((await request.formData()).get('id'));
+		const s = repo.getSession(id);
+		if (!s || s.endedAt) return fail(400, { error: 'Only an unfinished workout can be discarded' });
+		repo.deleteSession(id);
+		return { ok: true };
+	},
+
 	// quick readiness log for the day (manual, when healthmaxxing hasn't pushed)
 	readiness: async ({ request }) => {
 		const fd = await request.formData();

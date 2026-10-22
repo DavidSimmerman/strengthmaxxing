@@ -3,7 +3,7 @@
  * Both the JSON API (routes/api) and the dashboard (+page.server actions) call these,
  * so business rules (rollups, export shape, fatigue math) live in exactly one spot.
  */
-import { and, desc, eq, gte, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
 import { db } from '$lib/db';
 import {
 	exercises,
@@ -371,12 +371,15 @@ export function finishSession(
 			.get();
 	}
 	const bw = patch?.bodyweightKg ?? s.bodyweightKg ?? 80;
-	const endedAt = new Date();
+	// A workout left open (started last night, sets done today, finished an hour after the
+	// last set) would count all that idle time. Trim gaps over an hour to the sets.
+	const { startedAt, endedAt } = trimToSets(id, s.startedAt, new Date());
 	return db
 		.update(sessions)
 		.set({
+			startedAt,
 			endedAt,
-			...rollups({ ...s, bodyweightKg: bw }, endedAt),
+			...rollups({ ...s, startedAt, bodyweightKg: bw }, endedAt),
 			...measured,
 			bodyweightKg: bw,
 			notes: patch?.notes ?? s.notes
@@ -385,6 +388,46 @@ export function finishSession(
 		.returning()
 		.get();
 }
+
+const IDLE_MS = 60 * 60_000;
+const PAD_MS = 5 * 60_000;
+
+function trimToSets(id: number, start: Date, end: Date) {
+	const sets = db.select().from(sessionSets).where(eq(sessionSets.sessionId, id)).all();
+	if (!sets.length) return { startedAt: start, endedAt: end };
+	const first = Math.min(...sets.map((x) => (x.startedAt ?? x.completedAt ?? end).getTime()));
+	const last = Math.max(...sets.map((x) => (x.completedAt ?? end).getTime()));
+	return {
+		startedAt: first - start.getTime() > IDLE_MS ? new Date(first - PAD_MS) : start,
+		endedAt: end.getTime() - last > IDLE_MS ? new Date(last + PAD_MS) : end
+	};
+}
+
+/** Correct a workout's start/end (e.g. it was left running). Recomputes the rollups. */
+export function updateSessionTimes(id: number, t: { startedAt?: Date; endedAt?: Date }) {
+	const s = db.select().from(sessions).where(eq(sessions.id, id)).get();
+	if (!s) return null;
+	const startedAt = t.startedAt ?? s.startedAt;
+	const endedAt = t.endedAt ?? s.endedAt;
+	if (endedAt && endedAt <= startedAt) throw new Error('end must be after start');
+	const patch: Partial<typeof sessions.$inferInsert> = { startedAt, endedAt };
+	if (endedAt) {
+		const r = rollups({ ...s, startedAt }, endedAt);
+		patch.totalVolumeKg = r.totalVolumeKg;
+		// a measured number (watch / heart rate) belonged to the real workout; keep it
+		if (s.kcalSource === 'estimate') patch.estimatedKcal = r.estimatedKcal;
+	}
+	return db.update(sessions).set(patch).where(eq(sessions.id, id)).returning().get();
+}
+
+/** Unfinished workouts, newest first (to warn before starting another). */
+export const openSessions = () =>
+	db
+		.select({ id: sessions.id, name: sessions.name, startedAt: sessions.startedAt })
+		.from(sessions)
+		.where(isNull(sessions.endedAt))
+		.orderBy(desc(sessions.startedAt))
+		.all();
 
 function rollups(s: typeof sessions.$inferSelect, endedAt: Date) {
 	const id = s.id;

@@ -38,3 +38,25 @@ export const DELETE: RequestHandler = async ({ params }) => {
 	}
 	return json({ ok: true });
 };
+
+// PATCH /api/sessions/:id body {startedAt?, endedAt?} (epoch ms) → corrected session
+export const PATCH: RequestHandler = async ({ params, request }) => {
+	const id = parseId(params.id);
+	const b = await request.json().catch(() => null);
+	if (typeof b !== 'object' || b === null) throw error(400, 'body must be an object');
+	const t: { startedAt?: Date; endedAt?: Date } = {};
+	for (const k of ['startedAt', 'endedAt'] as const) {
+		if (b[k] === undefined) continue;
+		if (typeof b[k] !== 'number' || !Number.isFinite(b[k])) throw error(400, `${k} must be epoch ms`);
+		t[k] = new Date(b[k]);
+	}
+	if (!t.startedAt && !t.endedAt) throw error(400, 'nothing to update');
+	let s;
+	try {
+		s = repo.updateSessionTimes(id, t);
+	} catch (e) {
+		throw error(400, e instanceof Error ? e.message : 'bad times');
+	}
+	if (!s) throw error(404, 'session not found');
+	return json(s);
+};

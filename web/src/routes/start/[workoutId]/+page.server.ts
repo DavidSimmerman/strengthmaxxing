@@ -8,12 +8,23 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ params }) => {
 	const w = repo.getWorkout(Number(params.workoutId));
 	if (!w) throw error(404, 'Workout not found');
-	return { workout: { id: w.id, name: w.name }, areas: AREAS, estimate: estimateSoreness() };
+	return {
+		workout: { id: w.id, name: w.name },
+		areas: AREAS,
+		estimate: estimateSoreness(),
+		open: repo.openSessions()
+	};
 };
 
 export const actions: Actions = {
+	discardOpen: async ({ request }) => {
+		const id = Number((await request.formData()).get('id'));
+		const s = repo.getSession(id);
+		if (s && !s.endedAt) repo.deleteSession(id);
+		return { ok: true };
+	},
 	// Start the session with (or without) a check-in; the coach's weights fill in afterwards.
-	default: async ({ params, request }) => {
+	start: async ({ params, request }) => {
 		const w = repo.getWorkout(Number(params.workoutId));
 		if (!w) return fail(404, { error: 'Workout not found' });
 		const fd = await request.formData();

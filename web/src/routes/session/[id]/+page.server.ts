@@ -188,6 +188,13 @@ export const actions: Actions = {
 		return { ok: true };
 	},
 
+	discard: async ({ params }) => {
+		const id = Number(params.id);
+		const s = repo.getSession(id);
+		if (s && !s.endedAt) repo.deleteSession(id);
+		throw redirect(303, '/');
+	},
+
 	finish: async ({ params, request }) => {
 		const id = Number(params.id);
 		const fd = await request.formData();

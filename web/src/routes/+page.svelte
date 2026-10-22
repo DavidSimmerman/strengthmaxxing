@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Medal, Dumbbell } from '@lucide/svelte';
+	import { Medal, Dumbbell, Play } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Ring from '$lib/components/Ring.svelte';
 	import { num, dur, readinessBand, shortDate } from '$lib/ui';
@@ -34,9 +34,9 @@
 		class="group mb-4 flex items-center gap-4 overflow-hidden rounded-2xl border border-accent/40 bg-gradient-to-r from-accent/15 to-transparent p-4 transition hover:border-accent"
 	>
 		<div
-			class="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-accent text-2xl text-ink"
+			class="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-accent text-ink"
 		>
-			▶
+			<Play class="h-6 w-6" />
 		</div>
 		<div class="min-w-0 flex-1">
 			<p class="text-[11px] font-bold uppercase tracking-widest text-accent">Session live</p>
@@ -47,6 +47,15 @@
 		</div>
 		<span class="text-2xl text-accent transition group-hover:translate-x-1">→</span>
 	</a>
+	<form method="POST" action="?/discard" use:enhance class="-mt-2 mb-4 flex justify-end">
+		<input type="hidden" name="id" value={data.active.id} />
+		<button
+			onclick={(e) => {
+				if (!confirm(`Discard ${data.active!.name}? Its ${data.active!.setCount} logged sets are deleted.`)) e.preventDefault();
+			}}
+			class="text-xs text-zinc-500 hover:text-red-400">Discard this workout</button
+		>
+	</form>
 {/if}
 
 <section class="mb-4 grid gap-4 sm:grid-cols-[auto_1fr]">

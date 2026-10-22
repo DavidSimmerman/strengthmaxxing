@@ -214,6 +214,14 @@
 		{#if data.totalSets === 0}
 			<p class="mt-2 text-center text-xs text-zinc-600">Log at least one set to finish.</p>
 		{/if}
+		<form method="POST" action="?/discard" class="mt-3 text-center">
+			<button
+				onclick={(e) => {
+					if (!confirm('Discard this workout? Everything logged in it is deleted.')) e.preventDefault();
+				}}
+				class="text-xs text-zinc-500 hover:text-red-400">Discard workout</button
+			>
+		</form>
 	{:else}
 		<form method="POST" action="?/finish" use:enhance={finishInApp} class="rounded-2xl border border-accent bg-panel p-4">
 			<p class="mb-3 text-sm font-semibold">Wrap it up? Volume & kcal will be computed.</p>
