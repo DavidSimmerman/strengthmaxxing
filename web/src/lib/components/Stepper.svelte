@@ -52,7 +52,7 @@
 
 <div class="flex flex-col gap-1">
 	{#if label}
-		<span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</span>
+		<span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}{#if unit}<span class="normal-case">&nbsp;· {unit}</span>{/if}</span>
 	{/if}
 	<div
 		class="flex items-stretch overflow-hidden rounded-xl border border-line bg-ink transition-colors {ring}"
@@ -60,13 +60,13 @@
 		<button
 			type="button"
 			aria-label="decrease"
-			class="grid w-12 shrink-0 place-items-center text-2xl font-light text-zinc-400 transition-colors select-none touch-manipulation {btn}"
+			class="grid w-10 shrink-0 place-items-center text-2xl font-light text-zinc-400 transition-colors select-none touch-manipulation {btn}"
 			onpointerdown={() => startHold(-1)}
 			onpointerup={endHold}
 			onpointerleave={endHold}
 			onpointercancel={endHold}>−</button
 		>
-		<label class="flex flex-1 items-baseline justify-center gap-1 px-1 py-2.5">
+		<label class="flex min-w-0 flex-1 items-baseline justify-center gap-0.5 px-0.5 py-2.5">
 			<input
 				type="number"
 				inputmode="decimal"
@@ -74,14 +74,13 @@
 				{step}
 				{min}
 				{max}
-				class="w-full min-w-0 bg-transparent text-center text-2xl font-bold tabular-nums outline-none"
+				class="w-full min-w-0 bg-transparent text-center font-bold tabular-nums outline-none {String(value).length >= 5 ? 'text-lg' : String(value).length >= 4 ? 'text-xl' : 'text-2xl'}"
 			/>
-			{#if unit}<span class="text-sm text-zinc-500">{unit}</span>{/if}
 		</label>
 		<button
 			type="button"
 			aria-label="increase"
-			class="grid w-12 shrink-0 place-items-center text-2xl font-light text-zinc-400 transition-colors select-none touch-manipulation {btn}"
+			class="grid w-10 shrink-0 place-items-center text-2xl font-light text-zinc-400 transition-colors select-none touch-manipulation {btn}"
 			onpointerdown={() => startHold(1)}
 			onpointerup={endHold}
 			onpointerleave={endHold}

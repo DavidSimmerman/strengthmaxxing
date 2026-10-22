@@ -3,6 +3,7 @@
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
 	import { shortDate } from '$lib/ui';
+	import { ArrowUp, ArrowDown, Minus } from '@lucide/svelte';
 	import { wt, vol, toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
 
 	type LoggedSet = {
@@ -28,20 +29,49 @@
 		lastWeight: number;
 		lastReps: number;
 		lastTime?: { date: Date | string; sets: { reps: number; weightKg: number }[] } | null;
+		suggestion?: { weightKg: number; reps: number; kind: 'up' | 'hold' | 'down'; reason: string } | null;
 	};
 
 	let {
 		exercise,
-		onLogged
-	}: { exercise: Exercise; onLogged: (restSec: number, pr: number | null) => void } = $props();
+		onLogged,
+		suggesting = false
+	}: {
+		exercise: Exercise;
+		onLogged: (restSec: number, pr: number | null) => void;
+		suggesting?: boolean; // coach still working out today's weights
+	} = $props();
 
 	const wStep = $derived(weightStep(exercise.category));
 
 	// Inputs are in the user's unit; converted to kg only when posted.
 	// svelte-ignore state_referenced_locally
-	let reps = $state(exercise.lastReps || exercise.targetReps);
+	let reps = $state(
+		exercise.sets.length ? exercise.lastReps : exercise.suggestion?.reps || exercise.lastReps || exercise.targetReps
+	);
 	// svelte-ignore state_referenced_locally
-	let weight = $state(toDisplay(exercise.lastWeight || exercise.targetWeightKg));
+	let weight = $state(
+		toDisplay(
+			exercise.sets.length
+				? exercise.lastWeight
+				: exercise.suggestion?.weightKg ?? (exercise.lastWeight || exercise.targetWeightKg)
+		)
+	);
+	// When the coach's suggestion arrives after the page opened, use it — unless a set is
+	// already logged or the inputs were changed by hand.
+	// svelte-ignore state_referenced_locally
+	const seeded = { reps, weight, applied: !!exercise.suggestion };
+	$effect(() => {
+		const s = exercise.suggestion;
+		if (!s || seeded.applied || exercise.sets.length) return;
+		seeded.applied = true;
+		if (reps !== seeded.reps || weight !== seeded.weight) return;
+		reps = s.reps;
+		weight = toDisplay(s.weightKg);
+	});
+	// Mid-workout: a set that falls 2+ reps short drops the next set one weight step.
+	let adjustNote = $state('');
+	const targetReps = $derived(exercise.suggestion?.reps ?? exercise.targetReps);
 	let warmup = $state(false);
 	let justLogged = $state(false);
 	let error = $state('');
@@ -81,6 +111,28 @@
 					Last time ({shortDate(exercise.lastTime!.date)}): <span class="tabular-nums text-zinc-300"
 						>{lastTimeText} {units()}</span
 					>
+				</p>
+			{/if}
+			{#if exercise.suggestion}
+				{@const sg = exercise.suggestion}
+				<div class="mt-2 flex items-center gap-2 rounded-xl bg-ink px-3 py-2">
+					{#if sg.kind === 'up'}<ArrowUp class="h-4 w-4 text-accent2" />{:else if sg.kind === 'down'}<ArrowDown
+							class="h-4 w-4 text-accent"
+						/>{:else}<Minus class="h-4 w-4 text-zinc-300" />{/if}
+					<span
+						class="text-lg font-black tabular-nums {sg.kind === 'up'
+							? 'text-accent2'
+							: sg.kind === 'down'
+								? 'text-accent'
+								: 'text-zinc-200'}">{wt(sg.weightKg)} × {sg.reps}</span
+					>
+					<span class="ml-auto text-[11px] text-zinc-500">today</span>
+				</div>
+				{#if sg.reason}<p class="mt-1 text-xs text-zinc-400">{sg.reason}</p>{/if}
+			{:else if suggesting}
+				<p class="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+					<span class="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
+					Coach is working out today's weight…
 				</p>
 			{/if}
 		</div>
@@ -163,6 +215,11 @@
 				}
 				error = '';
 				justLogged = true;
+				const short = targetReps - reps;
+				if (!warmup && short >= 2 && weight > 0) {
+					weight = Math.max(0, Math.round((weight - wStep) * 100) / 100);
+					adjustNote = `That set was ${short} reps short, so the next one is ${weight} ${units()}.`;
+				} else adjustNote = '';
 				const pr = result.type === 'success' ? ((result.data?.pr as number | null) ?? null) : null;
 				onLogged(exercise.restSec, pr);
 				await update({ reset: false });
@@ -177,6 +234,7 @@
 		<input type="hidden" name="reps" value={reps} />
 		<input type="hidden" name="weightKg" value={fromDisplay(weight)} />
 
+		{#if adjustNote}<p class="mb-2 text-xs font-semibold text-accent">{adjustNote}</p>{/if}
 		<div class="grid grid-cols-2 gap-3">
 			<Stepper bind:value={reps} label="Reps" step={1} min={1} max={100} accent="accent2" />
 			<Stepper bind:value={weight} label="Weight" step={wStep} min={0} unit={units()} accent="accent" />

@@ -19,6 +19,6 @@ createServer(async (req, res) => {
 		return send({ plan: { name: b.currentPlan ? 'Revised' : 'Test Block', weeks: 6, deloadWeek: 6, progression: '+5 lb/week', days }, rationale: 'test', reply: b.currentPlan ? 'Swapped it.' : 'Here you go.' });
 	}
 	if (req.url === '/progress')
-		return send({ adjustments: b.workout.exercises.map((e) => ({ name: e.name, suggestedWeightKg: 62.5, suggestedReps: e.targetReps, deltaPct: 4, reason: 'test' })), summary: 'ok' });
+		return send({ adjustments: b.workout.exercises.map((e) => ({ name: e.name, suggestedWeightKg: 62.5, suggestedReps: e.targetReps, kind: 'up', deltaPct: 4, reason: 'test' })), summary: 'ok' });
 	res.writeHead(200); res.end('{"ok":true}');
 }).listen(Number(process.env.PORT) || 4399);

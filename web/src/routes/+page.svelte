@@ -67,15 +67,13 @@
 		{#if data.workouts.length}
 			<div class="mb-3 flex flex-col gap-2">
 				{#each data.workouts as w (w.id)}
-					<form method="POST" action="?/start" use:enhance>
-						<input type="hidden" name="workoutId" value={w.id} />
-						<button
-							class="flex w-full items-center justify-between rounded-xl border border-line bg-ink px-4 py-3 text-left transition hover:border-accent hover:bg-accent/5"
-						>
-							<span class="font-semibold">{w.name}</span>
-							<span class="text-xs tabular-nums text-zinc-500">{w.exerciseCount} exercises →</span>
-						</button>
-					</form>
+					<a
+						href="/start/{w.id}"
+						class="flex w-full items-center justify-between rounded-xl border border-line bg-ink px-4 py-3 text-left transition hover:border-accent hover:bg-accent/5"
+					>
+						<span class="font-semibold">{w.name}</span>
+						<span class="text-xs tabular-nums text-zinc-500">{w.exerciseCount} exercises →</span>
+					</a>
 				{/each}
 			</div>
 		{:else}

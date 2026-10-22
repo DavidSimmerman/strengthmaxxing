@@ -60,6 +60,10 @@ export const sessions = sqliteTable('sessions', {
 	readinessScore: integer(), // 0-100, from the coach/healthmaxxing at session start
 	// exercises added mid-session that aren't in the template (ids), so they persist before a set
 	extraExerciseIds: text({ mode: 'json' }).$type<number[]>(),
+	// start-of-workout check-in: energy 1-5, soreness per body area 0 fresh / 1 a bit / 2 very
+	checkin: text({ mode: 'json' }).$type<{ energy: number | null; soreness: Record<string, number> }>(),
+	// coach's per-exercise suggestions for this session (filled in the background)
+	suggestions: text({ mode: 'json' }).$type<Record<string, unknown>>(),
 	// cached rollups (recomputed on session end) so exports/reports stay cheap:
 	totalVolumeKg: real().notNull().default(0),
 	estimatedKcal: real().notNull().default(0), // active kcal (matches Apple's "Active Calories")

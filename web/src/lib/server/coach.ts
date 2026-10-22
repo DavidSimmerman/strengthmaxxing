@@ -10,6 +10,7 @@ import { sessions } from '$lib/db/schema';
 import { e1rm } from '$lib/metrics';
 import * as repo from './repo';
 import { isoDay } from '$lib/ui';
+import { estimateSoreness, muscleArea } from './soreness';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 
@@ -234,38 +235,54 @@ export function callAgent(path: '/plan' | '/progress', body: unknown, _fetchFn?:
 
 const TIME_OF_DAY = (h: number) => (h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night');
 
-/** Suggested weights for one workout: last top sets + today's readiness → agent /progress. */
-export async function progressFor(workoutId: number, fetchFn: typeof fetch, date = isoDay()) {
+/**
+ * Suggested weight × reps for each exercise of a workout: last time's sets + today's check-in
+ * (energy, soreness per area) + estimated soreness + standing preferences → agent /progress.
+ */
+export async function progressFor(
+	workoutId: number,
+	_fetchFn?: typeof fetch,
+	date = isoDay(),
+	opts: { checkin?: Checkin | null; excludeSessionId?: number } = {}
+) {
 	const workout = repo.getWorkout(workoutId);
 	if (!workout) return null;
-	// Per exercise: the top set (best e1RM) of the last session that included it — not merely
-	// the latest set, which is often a lighter back-off set.
+	const last = repo.lastPerformance(
+		workout.exercises.map((we) => we.exerciseId),
+		opts.excludeSessionId ?? -1
+	);
+	const now = Date.now();
 	const exercises = workout.exercises.map((we) => {
-		const last = lastTopSet(we.exerciseId);
+		const lt = last.get(we.exerciseId);
 		return {
 			name: we.exercise.name,
-			lastWeightKg: last?.weightKg ?? null,
-			lastReps: last?.reps ?? null,
-			targetWeightKg: we.targetWeightKg || null,
-			targetReps: we.targetReps
+			area: muscleArea(we.exercise.muscle),
+			equipment: we.exercise.category,
+			targetSets: we.targetSets,
+			targetReps: we.targetReps,
+			plannedWeightKg: we.targetWeightKg || null,
+			lastTime: lt
+				? { daysAgo: Math.round((now - new Date(lt.date).getTime()) / 864e5), sets: lt.sets }
+				: null
 		};
 	});
 	const r = repo.getReadiness(date);
-	const data = await callAgent(
-		'/progress',
-		{
-			workout: { name: workout.name, exercises },
-			readiness: r?.score ?? null,
-			units: repo.getSettings().units,
-			context: {
-				timeOfDay: TIME_OF_DAY(new Date().getHours()),
-				kcalBalance: r?.kcalBalance ?? null,
-				sleepHours: r?.sleepHours ?? null,
-				sorenessNote: r?.sorenessNote ?? null
-			}
+	const program = getActiveProgram();
+	const data = await callAgent('/progress', {
+		units: repo.getSettings().units,
+		profile: getProfile(),
+		program: program ? { name: program.name, progression: program.progression } : null,
+		checkin: opts.checkin ?? null,
+		sorenessEstimate: Object.fromEntries(Object.entries(estimateSoreness()).map(([a, v]) => [a, v.level])),
+		readiness: r?.score ?? null,
+		context: {
+			timeOfDay: TIME_OF_DAY(new Date().getHours()),
+			kcalBalance: r?.kcalBalance ?? null,
+			sleepHours: r?.sleepHours ?? null,
+			sorenessNote: r?.sorenessNote ?? null
 		},
-		fetchFn
-	);
+		workout: { name: workout.name, exercises }
+	});
 	return {
 		workout,
 		readiness: r?.score ?? null,
@@ -274,10 +291,50 @@ export async function progressFor(workoutId: number, fetchFn: typeof fetch, date
 	};
 }
 
+export type Checkin = { energy: number | null; soreness: Record<string, number> };
+
+export type SessionSuggestions = {
+	status: 'pending' | 'ready' | 'error';
+	at: string;
+	summary?: string;
+	error?: string;
+	// keyed by exerciseId
+	items?: Record<string, { weightKg: number; reps: number; kind: 'up' | 'hold' | 'down'; reason: string }>;
+};
+
+/** Ask the coach for this session's weights and store them on the session (runs in the background). */
+export async function suggestForSession(sessionId: number) {
+	const s = repo.getSession(sessionId);
+	if (!s?.workoutId) return;
+	const set = (v: SessionSuggestions) => repo.setSessionSuggestions(sessionId, v);
+	set({ status: 'pending', at: new Date().toISOString() });
+	try {
+		const r = await progressFor(s.workoutId, undefined, isoDay(), {
+			checkin: s.checkin ?? null,
+			excludeSessionId: sessionId
+		});
+		if (!r) throw new Error('workout not found');
+		const byName = new Map(r.workout.exercises.map((we) => [we.exercise.name, we.exerciseId]));
+		const items: NonNullable<SessionSuggestions['items']> = {};
+		for (const a of r.adjustments) {
+			const id = byName.get(a.name);
+			const w = Number(a.suggestedWeightKg);
+			const reps = Math.round(Number(a.suggestedReps));
+			if (!id || !Number.isFinite(w) || w < 0 || !(reps > 0)) continue;
+			const kind = a.kind === 'up' || a.kind === 'down' ? a.kind : 'hold';
+			items[id] = { weightKg: w, reps, kind, reason: String(a.reason ?? '').slice(0, 300) };
+		}
+		set({ status: 'ready', at: new Date().toISOString(), summary: r.summary, items });
+	} catch (e) {
+		set({ status: 'error', at: new Date().toISOString(), error: e instanceof Error ? e.message : 'coach unavailable' });
+	}
+}
+
 export type Adjustment = {
 	name: string;
 	suggestedWeightKg: number;
 	suggestedReps: number;
+	kind?: 'up' | 'hold' | 'down';
 	deltaPct: number;
 	reason: string;
 };

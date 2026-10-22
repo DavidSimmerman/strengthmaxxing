@@ -250,23 +250,38 @@ function planPrompt(input) {
 
 function progressPrompt(input) {
   const schema =
-    '{"adjustments":[{"name":string,"suggestedWeightKg":number,"suggestedReps":number,"deltaPct":number,"reason":string}],"summary":string}';
+    '{"adjustments":[{"name":string,"suggestedWeightKg":number,"suggestedReps":number,' +
+    '"kind":"up"|"hold"|"down","deltaPct":number,"reason":string}],"summary":string}';
+  const lb = input.units !== 'kg';
   return [
     SYSTEM_RULES,
     '',
-    'Task: adjust today\'s working weights and reps per exercise via autoregulation.',
-    `Inputs (JSON): ${JSON.stringify(input)}`,
-    'readiness is 0-100: higher = push harder / add load, lower = deload / reduce load or reps.',
-    'If readiness is null it was not logged today: assume a normal day, progress conservatively.',
-    'targetWeightKg/targetReps are what their program plans for today. When targetWeightKg is set, ' +
-      'start from it: the program already accounts for time off and weekly progression. Use lastWeightKg/lastReps ' +
-      'only to sanity-check (e.g. nudge up if they clearly beat the target last time). When targetWeightKg is ' +
-      'null, base it on lastWeightKg and lastReps vs targetReps.',
-    'Then modulate by readiness and context (timeOfDay, kcalBalance deficit, sleepHours, sorenessNote).',
-    'deltaPct is the percent change vs targetWeightKg when set, else vs lastWeightKg (may be negative).',
-    `Write weights inside "reason" and "summary" in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}.`,
-    'CRITICAL: each output "name" MUST exactly match the corresponding input exercise name.',
-    'Include one adjustment object per input exercise.',
+    "Task: suggest today's working weight and reps for each exercise in this workout.",
+    `Inputs (JSON; weights in kg): ${JSON.stringify(input)}`,
+    '',
+    'How to decide, per exercise:',
+    '1. Start from how they did LAST TIME on that exercise (lastTime.sets, every set). Rep target is ' +
+      'targetReps. If they hit the target on every set with reps to spare, progress: one small load step ' +
+      `(${lb ? '5 lb barbell/smith/machine/cable, 2.5 lb per dumbbell' : '2.5 kg barbell/smith/machine/cable, 1 kg per dumbbell'}) ` +
+      'or +1-2 reps. If some sets fell short, hold. If reps fell off sharply or most sets missed, go down ' +
+      'one step. No lastTime: use plannedWeightKg, else a conservative estimate from their other lifts.',
+    '2. Adjust for TODAY. checkin.energy is 1 (drained) to 5 (great); checkin.soreness is per body area, ' +
+      '0 fresh, 1 a bit, 2 very (it is what they reported; sorenessEstimate is from recent training and ' +
+      'only applies when checkin is missing). Use the soreness of the exercise\'s own area. Energy 1-2 or ' +
+      'area "very" sore: no increase, usually one step down or fewer reps. Area "a bit" sore: no increase. ' +
+      'Energy 4-5 and the area fresh: progress as in step 1. readiness (0-100) and context also apply.',
+    '3. STANDING PREFERENCES OVERRIDE PROGRESSION. Read profile.notes, profile.avoid and profile.goal. If ' +
+      'they want an area kept light or easy (e.g. legs light because they run), NEVER raise load or reps ' +
+      'there just because it felt easy: keep it at or below last time, and lower it if they are sore. Only ' +
+      'go up in that area if they explicitly asked to. Same for any other "take it easy on X" preference.',
+    '',
+    '"kind": up / hold / down vs last time (vs plannedWeightKg when there is no last time). "deltaPct" = ' +
+      'percent load change on the same basis.',
+    '"reason": ONE short sentence citing last time\'s numbers and the deciding factor for today, e.g. ' +
+      '"Hit 10 on both sets last time and chest is fresh: +5 lb." or "Kept light: legs stay easy for your running."',
+    '"summary": one or two sentences on today overall.',
+    `Write weights in "reason" and "summary" in ${lb ? 'pounds (lb), never kg' : 'kg'}. Only suggestedWeightKg is in kg.`,
+    'CRITICAL: each output "name" MUST exactly match the input exercise name. One adjustment per input exercise.',
     `Output ONLY minified JSON of this shape: ${schema}`,
   ].join('\n');
 }

@@ -72,6 +72,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const last = repo.lastPerformance(planned.map((p) => p.exerciseId), id);
 	const best = repo.bestE1rmByExercise(id);
 
+	const sug = (session.suggestions ?? null) as import('$lib/server/coach').SessionSuggestions | null;
 	const exercises = planned.map((p) => {
 		const done = (setsByExercise.get(p.exerciseId) ?? []).sort((a, b) => a.setIndex - b.setIndex);
 		return {
@@ -86,6 +87,7 @@ export const load: PageServerLoad = async ({ params }) => {
 				volume: s.reps * s.weightKg
 			})),
 			lastTime: last.get(p.exerciseId) ?? null,
+			suggestion: sug?.items?.[p.exerciseId] ?? null,
 			bestE1rm: best.get(p.exerciseId) ?? 0,
 			lastWeight: done.length
 				? done[done.length - 1].weightKg
@@ -113,8 +115,10 @@ export const load: PageServerLoad = async ({ params }) => {
 			id: session.id,
 			name: session.name,
 			startedAt: session.startedAt,
-			readinessScore: session.readinessScore
+			readinessScore: session.readinessScore,
+			checkin: session.checkin ?? null
 		},
+		suggestions: sug ? { status: sug.status, summary: sug.summary ?? '', error: sug.error ?? '' } : null,
 		exercises,
 		library,
 		totalVolume,

@@ -225,11 +225,13 @@ export function startSession(input: {
 	readinessScore?: number | null;
 	clientId?: string | null;
 	startedAt?: number | null; // epoch ms
+	checkin?: { energy: number | null; soreness: Record<string, number> } | null;
 }) {
 	return db
 		.insert(sessions)
 		.values({
 			clientId: input.clientId ?? null,
+			checkin: input.checkin ?? null,
 			...(input.startedAt ? { startedAt: new Date(input.startedAt) } : {}),
 			workoutId: input.workoutId ?? null,
 			name: input.name ?? 'Workout',
@@ -240,6 +242,9 @@ export function startSession(input: {
 		.returning()
 		.get();
 }
+
+export const setSessionSuggestions = (id: number, v: Record<string, unknown>) =>
+	db.update(sessions).set({ suggestions: v }).where(eq(sessions.id, id)).run();
 
 export const findSessionByClientId = (clientId: string) =>
 	db.select().from(sessions).where(eq(sessions.clientId, clientId)).get();

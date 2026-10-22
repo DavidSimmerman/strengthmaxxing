@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { X, Trophy } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import { Zap } from '@lucide/svelte';
 	import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
 	import { dur, supersetLabel } from '$lib/ui';
@@ -12,6 +14,22 @@
 	// rest timer trigger — bump the key + set restSec whenever a set is logged
 	let restKey = $state(0);
 	let restSec = $state(120);
+	// The coach's weights are worked out in the background after start — refresh until ready.
+	$effect(() => {
+		if (data.suggestions?.status !== 'pending') return;
+		const t = setInterval(() => invalidateAll(), 3000);
+		return () => clearInterval(t);
+	});
+	const ENERGY = ['Drained', 'Low', 'OK', 'Good', 'Great'];
+	const checkinText = $derived.by(() => {
+		const c = data.session.checkin;
+		if (!c) return '';
+		const parts = c.energy ? [`Energy ${ENERGY[c.energy - 1].toLowerCase()}`] : [];
+		for (const [area, lvl] of Object.entries(c.soreness))
+			if (lvl) parts.push(`${area} ${lvl === 2 ? 'very sore' : 'a bit sore'}`);
+		return parts.join(' · ');
+	});
+
 	let prFlash = $state<string | null>(null);
 	function onLogged(sec: number, pr: number | null) {
 		restSec = sec;
@@ -75,6 +93,13 @@
 	</div>
 </div>
 
+{#if checkinText || data.suggestions?.status === 'error'}
+	<div class="mb-3 flex items-center gap-2 rounded-xl bg-panel px-3 py-2 text-xs text-zinc-400">
+		<Zap class="h-3.5 w-3.5 shrink-0 text-accent2" />
+		<span>{checkinText}{#if data.suggestions?.status === 'error'}{checkinText ? ' · ' : ''}Coach couldn't suggest weights: using last time's.{/if}</span>
+	</div>
+{/if}
+
 {#if prFlash}
 	<div class="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-accent2 px-4 py-3 font-black text-ink"><Trophy class="h-5 w-5" />{prFlash}</div>
 {/if}
@@ -99,13 +124,13 @@
 				</div>
 				<div class="flex flex-col gap-2">
 					{#each grp.items as ex (ex.exerciseId)}
-						<ExerciseLogger exercise={ex} {onLogged} />
+						<ExerciseLogger exercise={ex} {onLogged} suggesting={data.suggestions?.status === 'pending'} />
 					{/each}
 				</div>
 			</div>
 		{:else}
 			{#each grp.items as ex (ex.exerciseId)}
-				<ExerciseLogger exercise={ex} {onLogged} />
+				<ExerciseLogger exercise={ex} {onLogged} suggesting={data.suggestions?.status === 'pending'} />
 			{/each}
 		{/if}
 	{/each}
