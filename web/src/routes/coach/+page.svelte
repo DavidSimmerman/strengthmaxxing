@@ -75,7 +75,7 @@
 		const t = text.trim();
 		if (!t) return;
 		text = '';
-		post({ text: t }, 'Thinking — this can take up to a minute.', t);
+		post({ text: t }, 'Researching and writing — this can take a few minutes.', t);
 	}
 
 	// ---- plan card actions ----
@@ -269,6 +269,23 @@
 					{m.text}
 				</div>
 
+				{#if m.sources?.length}
+					<details class="mr-6 self-start text-xs text-zinc-500">
+						<summary class="cursor-pointer select-none hover:text-zinc-300">
+							Based on {m.sources.length} source{m.sources.length === 1 ? '' : 's'}
+						</summary>
+						<ul class="mt-1 flex flex-col gap-0.5 pl-3">
+							{#each m.sources as src (src.url)}
+								<li>
+									<a href={src.url} target="_blank" rel="noopener noreferrer" class="underline decoration-zinc-700 hover:text-zinc-300"
+										>{src.title}</a
+									>
+								</li>
+							{/each}
+						</ul>
+					</details>
+				{/if}
+
 				{#if m.plan}
 					{@const plan = m.plan}
 					<div class="mr-6 rounded-2xl border border-line bg-panel p-3">
@@ -374,7 +391,7 @@
 		{#if pending || waiting}
 			<div class="mr-6 flex items-center gap-3 self-start rounded-2xl rounded-bl-md bg-panel px-3.5 py-2.5 text-zinc-400">
 				<span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>
-				{pending ?? 'The coach is working on it — this can take up to a minute.'}
+				{pending ?? 'The coach is researching and writing — this can take a few minutes.'}
 			</div>
 		{/if}
 	</div>

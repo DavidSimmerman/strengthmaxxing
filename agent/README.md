@@ -36,6 +36,7 @@ match the input names so the app can map results back.
 |---------------------|----------------------|---------|
 | `PORT`              | `8787`               | Listen port. |
 | `AGENT_MODEL`       | `claude-opus-5-5`    | Model id (passed to the CLI as `--model` and used by the API fallback). |
+| `AGENT_RESEARCH`    | `on`                 | `/plan` may use web search + page reading first and returns `sources`. `off` disables. |
 | `AGENT_EFFORT`      | `medium`             | How hard the model thinks (`low`…`max`). Passed as `--effort` / `output_config.effort`. |
 | `ANTHROPIC_API_KEY` | *(unset)*            | Enables the API fallback when set. |
 | `CLAUDE_BIN`        | `claude`             | Path/name of the CLI binary. |

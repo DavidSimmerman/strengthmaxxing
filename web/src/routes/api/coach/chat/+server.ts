@@ -93,9 +93,20 @@ async function answer(
 		const changed = plan && (!currentPlan || !coach.samePlan(plan, currentPlan));
 		return {
 			text: String(data.reply || data.rationale || 'Here you go.'),
-			...(changed ? { plan: plan!, rationale: String(data.rationale ?? '') } : {})
+			...(changed ? { plan: plan!, rationale: String(data.rationale ?? '') } : {}),
+			sources: cleanSources(data.sources)
 		};
 	}
+}
+
+/** Only http(s) links with a title, max 8. */
+function cleanSources(v: unknown) {
+	if (!Array.isArray(v)) return [];
+	return v
+		.filter((s): s is { title: string; url: string } => typeof s?.title === 'string' && typeof s?.url === 'string')
+		.filter((s) => /^https?:\/\//.test(s.url))
+		.slice(0, 8)
+		.map((s) => ({ title: s.title.slice(0, 200), url: s.url }));
 }
 
 /** Keep only well-formed profile fields from the model. */

@@ -10,6 +10,8 @@ import { sessions } from '$lib/db/schema';
 import { e1rm } from '$lib/metrics';
 import * as repo from './repo';
 import { isoDay } from '$lib/ui';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 
 export const AGENT_URL = env.AGENT_URL || 'http://localhost:8787';
 
@@ -194,15 +196,39 @@ export function lastTopSet(exerciseId: number) {
 	return h.sets.filter((s) => s.sessionId === lastDay).reduce((b, s) => (e1rm(s.weightKg, s.reps) > e1rm(b.weightKg, b.reps) ? s : b));
 }
 
-export async function callAgent(path: '/plan' | '/progress', body: unknown, fetchFn: typeof fetch) {
-	const res = await fetchFn(`${AGENT_URL}${path}`, {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body)
+/**
+ * POST to the coach agent. Plain node:http, not fetch: research turns run longer than fetch's
+ * fixed 5-minute wait for response headers. `_fetchFn` is kept for call-site compatibility.
+ */
+export function callAgent(path: '/plan' | '/progress', body: unknown, _fetchFn?: typeof fetch) {
+	const url = new URL(path, AGENT_URL);
+	const payload = JSON.stringify(body);
+	const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
+	return new Promise<Record<string, unknown>>((resolve, reject) => {
+		const req = send(
+			url,
+			{ method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } },
+			(res) => {
+				let raw = '';
+				res.setEncoding('utf8');
+				res.on('data', (c) => (raw += c));
+				res.on('end', () => {
+					let data: Record<string, unknown> | null = null;
+					try {
+						data = JSON.parse(raw);
+					} catch {
+						/* handled below */
+					}
+					if (!res.statusCode || res.statusCode >= 400 || !data)
+						return reject(new Error((data?.error as string) ?? `coach agent error (${res.statusCode})`));
+					resolve(data);
+				});
+			}
+		);
+		req.setTimeout(20 * 60_000, () => req.destroy(new Error('coach agent timed out')));
+		req.on('error', reject);
+		req.end(payload);
 	});
-	const data = await res.json().catch(() => null);
-	if (!res.ok) throw new Error((data as { error?: string } | null)?.error ?? `coach agent error (${res.status})`);
-	return data as Record<string, unknown>;
 }
 
 
@@ -275,6 +301,7 @@ export type ChatMessage = {
 	pending?: boolean; // coach still working (replies run in the background)
 	plan?: CoachPlan;
 	rationale?: string;
+	sources?: { title: string; url: string }[];
 	saved?: boolean;
 	progress?: {
 		workoutId: number;
@@ -286,7 +313,7 @@ export type ChatMessage = {
 };
 const CHAT_MAX = 60;
 
-const PENDING_MAX_MS = 6 * 60_000;
+const PENDING_MAX_MS = 20 * 60_000; // research turns can take several minutes
 
 export function getChat(): ChatMessage[] {
 	const chat = ((repo.getSettings().profile ?? {}) as { chat?: ChatMessage[] }).chat ?? [];

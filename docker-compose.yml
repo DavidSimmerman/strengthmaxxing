@@ -67,6 +67,8 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       AGENT_MODEL: "${AGENT_MODEL:-}"
       AGENT_EFFORT: "${AGENT_EFFORT:-medium}"
+      # Plan requests may search the web and cite sources first (slower). "off" disables.
+      AGENT_RESEARCH: "${AGENT_RESEARCH:-on}"
     networks:
       - smx
 

@@ -35,7 +35,8 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 				request: (b.request as string | undefined) ?? '',
 				history: coach.historySummary(),
 				library: repo.listExercises().map((e) => `${e.name} [${e.category}]`),
-				currentPlan: active?.plan
+				currentPlan: active?.plan,
+				noResearch: true // synchronous route: research would outlast proxy timeouts
 			},
 			fetch
 		);

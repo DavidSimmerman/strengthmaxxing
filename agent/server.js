@@ -16,6 +16,9 @@ const AGENT_MODEL = process.env.AGENT_MODEL || 'claude-opus-5-5';
 const AGENT_EFFORT = process.env.AGENT_EFFORT || 'medium'; // low | medium | high | xhigh | max
 const CLI_BIN = process.env.CLAUDE_BIN || 'claude';
 const MODEL_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS) || 240_000; // multi-week plans take a while
+// Plan requests may search the web first (AGENT_RESEARCH=off disables). Research runs take minutes.
+const RESEARCH = process.env.AGENT_RESEARCH !== 'off';
+const RESEARCH_TIMEOUT_MS = Number(process.env.AGENT_RESEARCH_TIMEOUT_MS) || 900_000;
 
 // ---------------------------------------------------------------------------
 // Model invocation
@@ -48,12 +51,13 @@ function cliEnv() {
   return env;
 }
 
-function callClaudeCli(prompt) {
+function callClaudeCli(prompt, { research = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLI_BIN,
-      ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', AGENT_EFFORT],
-      { timeout: MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: cliEnv() },
+      ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', AGENT_EFFORT,
+        ...(research ? ['--allowedTools', 'WebSearch', 'WebFetch'] : [])],
+      { timeout: research ? RESEARCH_TIMEOUT_MS : MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: cliEnv() },
       (err, stdout, stderr) => {
         if (err && !stdout) {
           reject(new Error(`claude cli failed: ${err.message} ${stderr || ''}`.trim()));
@@ -78,51 +82,61 @@ function callClaudeCli(prompt) {
 }
 
 // Fallback: Anthropic Messages API. Returns the concatenated text of the reply.
-async function callAnthropicApi(prompt) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      // if a safety classifier declines, the API retries on a fallback model instead of failing
-      'anthropic-beta': 'server-side-fallback-2026-07-01',
-    },
-    body: JSON.stringify({
-      model: AGENT_MODEL,
-      max_tokens: 16000,
-      output_config: { effort: AGENT_EFFORT },
-      fallbacks: 'default',
-      messages: [{ role: 'user', content: prompt }],
-    }),
-    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`anthropic api ${res.status}: ${body.slice(0, 300)}`);
+async function callAnthropicApi(prompt, { research = false } = {}) {
+  const messages = [{ role: 'user', content: prompt }];
+  // Server-side web tools may pause a long turn; resend to let it continue (a few times max).
+  for (let turn = 0; turn < 4; turn++) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        // if a safety classifier declines, the API retries on a fallback model instead of failing
+        'anthropic-beta': 'server-side-fallback-2026-07-01',
+      },
+      body: JSON.stringify({
+        model: AGENT_MODEL,
+        max_tokens: 16000,
+        output_config: { effort: AGENT_EFFORT },
+        fallbacks: 'default',
+        ...(research
+          ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 },
+                      { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 5 }] }
+          : {}),
+        messages,
+      }),
+      signal: AbortSignal.timeout(research ? RESEARCH_TIMEOUT_MS : MODEL_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`anthropic api ${res.status}: ${body.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    if (data.stop_reason === 'refusal') throw new Error('model declined the request');
+    if (data.stop_reason === 'pause_turn') {
+      messages.push({ role: 'assistant', content: data.content });
+      continue;
+    }
+    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    if (!text) throw new Error('anthropic api returned no text');
+    return text;
   }
-  const data = await res.json();
-  if (data.stop_reason === 'refusal') throw new Error('model declined the request');
-  const text = (data.content || [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-  if (!text) throw new Error('anthropic api returned no text');
-  return text;
+  throw new Error('anthropic api: research did not finish');
 }
 
 // Prefer CLI; else API key; else throw so the handler can 502.
-async function askModel(prompt) {
+async function askModel(prompt, opts = {}) {
   if (await probeCli()) {
     try {
-      return await callClaudeCli(prompt);
+      return await callClaudeCli(prompt, opts);
     } catch (e) {
       // If the CLI genuinely failed but we have an API key, try that.
-      if (process.env.ANTHROPIC_API_KEY) return callAnthropicApi(prompt);
+      if (process.env.ANTHROPIC_API_KEY) return callAnthropicApi(prompt, opts);
       throw e;
     }
   }
-  if (process.env.ANTHROPIC_API_KEY) return callAnthropicApi(prompt);
+  if (process.env.ANTHROPIC_API_KEY) return callAnthropicApi(prompt, opts);
   throw new Error('no model backend: claude CLI unavailable and ANTHROPIC_API_KEY unset');
 }
 
@@ -159,7 +173,7 @@ function planPrompt(input) {
     '"plan":{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
     '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|null,"estMinutes":number,' +
     '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"notes":string}]}]},' +
-    '"rationale":string,"reply":string}';
+    '"sources":[{"title":string,"url":string}],"rationale":string,"reply":string}';
   const lines = [
     SYSTEM_RULES,
     '',
@@ -187,6 +201,13 @@ function planPrompt(input) {
       'set\'s rest, plus 5 minutes to warm up and move between stations. It MUST fit their stated session ' +
       'length; if it does not, cut exercises or sets.',
     '4. Check the finished plan against each requirement before answering.',
+    '',
+    'Research: you can search the web and read pages. When designing a new plan or making a substantive ' +
+      'change, first look up current, reputable evidence relevant to THIS lifter (e.g. weekly sets per ' +
+      'muscle for hypertrophy, training to failure with low set counts, combining lifting with heavy ' +
+      'running, ab training frequency). Prefer peer-reviewed reviews and recognized experts; ignore ' +
+      'listicles. Keep it to a few targeted searches. Skip research for small edits or quick questions. ' +
+      'List what actually informed the plan in "sources" (empty when you did not research).',
     '',
     'Plan shape:',
     '- "weeks": null for an open-ended cycle they repeat until they want a change (the default). Use a ' +
@@ -300,14 +321,15 @@ function validateProgress(b) {
   return null;
 }
 
-async function handleModelEndpoint(res, prompt) {
+async function handleModelEndpoint(res, prompt, opts = {}) {
   // One retry on unparseable output — models occasionally wrap JSON in prose.
   for (let attempt = 0; attempt < 2; attempt++) {
     let text;
     try {
-      text = await askModel(
-        attempt === 0 ? prompt : `${prompt}\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object.`
-      );
+      // The retry only reformats, so it skips research.
+      text = attempt === 0
+        ? await askModel(prompt, opts)
+        : await askModel(`${prompt}\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object.`);
     } catch (e) {
       return send(res, 502, { error: `model call failed: ${e.message}` });
     }
@@ -339,12 +361,14 @@ const server = createServer(async (req, res) => {
     const err = url === '/plan' ? validatePlan(body) : validateProgress(body);
     if (err) return send(res, 400, { error: err });
     const prompt = url === '/plan' ? planPrompt(body) : progressPrompt(body);
-    return handleModelEndpoint(res, prompt);
+    return handleModelEndpoint(res, prompt, { research: url === '/plan' && RESEARCH && !body.noResearch });
   }
 
   return send(res, 404, { error: 'not found' });
 });
 
+// Research turns run for minutes; Node's default 5-minute request timeout would cut them off.
+server.requestTimeout = 0;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`coach agent listening on :${PORT}`);
 });

@@ -24,6 +24,7 @@ for (const [i, text] of msgs.entries()) {
   for (;;) { await new Promise((s) => setTimeout(s, 3000)); m = (await api('GET', '/api/coach/chat')).messages.find((x) => x.id === id); if (!m.pending) break; }
   console.log(`\n=== Turn ${i + 1} (${((Date.now() - t0) / 1000).toFixed(0)}s): "${text.slice(0, 50)}..."`);
   console.log(`coach: ${m.text}`);
+  console.log(`sources (${(m.sources ?? []).length}): ${(m.sources ?? []).map((x) => x.title + ' <' + x.url + '>').join(' | ') || 'none'}`);
   const p = m.plan;
   if (!p) { console.log('(no new plan — answered in text)'); continue; }
   console.log(`plan: ${p.name} | weeks=${p.weeks} deload=${p.deloadWeek} | ${p.days.length} days`);
