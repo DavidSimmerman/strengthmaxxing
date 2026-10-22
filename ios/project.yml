@@ -17,7 +17,7 @@ options:
 
 settings:
   base:
-    DEVELOPMENT_TEAM: ""                       # ← your 10-character Team ID
+    DEVELOPMENT_TEAM: NS237SS5KD               # same team as Mile A Day
     APP_BUNDLE_ID: tech.simmerman.strengthmaxxing
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.0"
