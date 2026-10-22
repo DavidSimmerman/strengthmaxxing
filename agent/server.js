@@ -153,43 +153,77 @@ const SYSTEM_RULES =
 
 function planPrompt(input) {
   const schema =
-    '{"plan":{"name":string,"weeks":number,"deloadWeek":number|null,"progression":string,' +
-    '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun",' +
+    '{"requirements":[string],' +
+    '"profile":{"goal"?:string,"daysPerWeek"?:number,"sessionMin"?:number,"experience"?:string,' +
+    '"equipment"?:[string],"avoid"?:string,"notes"?:string},' +
+    '"plan":{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
+    '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|null,"estMinutes":number,' +
     '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"notes":string}]}]},' +
     '"rationale":string,"reply":string}';
   const lines = [
     SYSTEM_RULES,
     '',
-    'Task: design a multi-week strength program for this one lifter.',
-    `Profile (JSON): ${JSON.stringify(input.profile ?? {})}`,
-    `What they asked for, in their words: ${JSON.stringify(input.request ?? '')}`,
-    `Recent conversation, oldest first (context only): ${JSON.stringify(input.conversation ?? [])}`,
+    'Task: you are this lifter\'s coach in an ongoing chat. Design or revise their training plan.',
+    `Saved profile (JSON, may be empty or out of date): ${JSON.stringify(input.profile ?? {})}`,
+    `The whole conversation so far, oldest first. Everything the lifter said still applies unless ` +
+      `they later changed it: ${JSON.stringify(input.conversation ?? [])}`,
+    `Their newest message, which you are answering now: ${JSON.stringify(input.request ?? '')}`,
     `Training history (JSON; weights in kg; e1rm = estimated 1-rep max): ${JSON.stringify(input.history ?? {})}`,
-    `Exercise library — use ONLY these exact names: ${JSON.stringify(input.library ?? [])}`,
-    `Produce exactly ${input.profile?.daysPerWeek ?? 4} training days per week, each fitting in ` +
-      `${input.profile?.sessionMin ?? 60} minutes including rest.`,
-    'Program length 4-8 weeks; put a deload in the last week unless the request says otherwise.',
-    'weightKg = the week-1 working weight. Base it on their history (about 75-85% of e1rm for 5-8 reps). ' +
-      'For exercises with no history, estimate a conservative start from their related lifts. Use null ' +
-      'ONLY for pure bodyweight moves (pull-ups, dips, leg raises). Round to what a US gym loads ' +
-      '(multiples of 2.27 kg = 5 lb for barbell/machine, 1.13 kg = 2.5 lb for dumbbells).',
+    `Exercise library as "Name [equipment]". Use ONLY these exact names (without the bracket): ` +
+      `${JSON.stringify(input.library ?? [])}`,
+    'Use only exercises their equipment supports. "barbell" needs a barbell and rack and is NOT a Smith ' +
+      'machine; "machine" means that specific machine (leg curl, leg press, pec deck...). When they list ' +
+      'equipment, treat anything not listed as unavailable; bodyweight moves need only what they name ' +
+      '(e.g. dips need a dip station). Prefer the Smith machine version over a barbell lift they cannot do.',
+    '',
+    'How to work:',
+    '1. "requirements": list every concrete requirement and preference the lifter has stated anywhere ' +
+      'in the conversation or profile (training days, session length, sets per exercise, goals, what to ' +
+      'emphasize or keep light, variety, equipment, injuries, likes/dislikes, rest-day pattern). Use their ' +
+      'latest statement when they changed their mind. Never invent a requirement they did not state.',
+    '2. Build the plan so it satisfies EVERY requirement. Where they gave no preference, choose what best ' +
+      'serves their goal. Nothing in these instructions overrides what they asked for.',
+    '3. Each day\'s "estMinutes" = realistic time to finish it: about 1 minute of work per set plus each ' +
+      'set\'s rest, plus 5 minutes to warm up and move between stations. It MUST fit their stated session ' +
+      'length; if it does not, cut exercises or sets.',
+    '4. Check the finished plan against each requirement before answering.',
+    '',
+    'Plan shape:',
+    '- "weeks": null for an open-ended cycle they repeat until they want a change (the default). Use a ' +
+      'number only if they ask for a fixed-length block. "deloadWeek": null unless they ask for one.',
+    '- "dayOfWeek": null when the days are a rotation done in order (e.g. they train most days with ' +
+      'flexible rest days). Set weekdays only if they have a fixed weekly schedule.',
+    '- weightKg = the starting working weight. Base it on their history (about 75-85% of e1rm for 5-8 ' +
+      'reps); estimate a conservative start from related lifts when there is no history; null ONLY for ' +
+      'bodyweight moves. Round to what a US gym loads (2.27 kg = 5 lb steps for barbell/machine/cable, ' +
+      '1.13 kg = 2.5 lb for dumbbells).',
+    '- "progression": one or two sentences on how load/reps move session to session.',
+    '',
+    '"profile": the lifter\'s standing preferences as of now, so they are remembered next time: ' +
+      'daysPerWeek (7 = every day), sessionMin (their MAXIMUM session minutes), goal, experience, ' +
+      'equipment, avoid (injuries/exercises to skip), notes (other standing preferences in one or two ' +
+      'short sentences, e.g. "2-3 hard sets per exercise; likes variety; runs a lot, keep legs light"). ' +
+      'Include only what you know.',
     `Write every weight in prose ("progression", "rationale", "reply") in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}. ` +
       'Only the weightKg JSON fields are in kg.',
-    '"progression" = one or two sentences on how load/reps move week to week.',
-    'Honor equipment, exercises to avoid and injury notes strictly. Honor stated likes/dislikes.',
-    '"rationale" = 2-3 sentences citing their actual numbers. "reply" = a short, direct chat reply ' +
-      '(1-3 sentences) to what they asked, addressed to them.',
+    '"rationale" = 2-3 sentences on how the plan meets their goals. "reply" = a short, direct chat ' +
+      'reply (1-3 sentences) to their newest message.',
   ];
   if (input.currentPlan) {
     lines.push(
-      `Their CURRENT program (JSON): ${JSON.stringify(input.currentPlan)}`,
-      'If they ask for a brand-new program, design one from scratch. If they ask to change ' +
-        'something, revise the current program: change only what the request requires and keep ' +
-        'everything else identical, then say what changed in "reply". If they only ask a ' +
-        'question, return the current program unchanged and answer it in "reply".'
+      '',
+      `The plan currently under discussion (JSON; the last one you proposed, whether or not they ` +
+        `saved it): ${JSON.stringify(input.currentPlan)}`,
+      'If they ask for a brand-new plan, design one from scratch. If they ask to change something, ' +
+        'revise THIS plan: change only what the request requires and keep everything else identical ' +
+        '(same number of days, same structure), then say what changed in "reply". If they only ask a ' +
+        'question, return this plan unchanged and answer in "reply".'
     );
   }
-  lines.push(`Output ONLY minified JSON of this shape: ${schema}`);
+  if (input.feedback?.length) {
+    lines.push('', `Your previous answer broke these requirements — fix them: ${JSON.stringify(input.feedback)}`);
+  }
+  lines.push('', `Output ONLY minified JSON of this shape: ${schema}`);
   return lines.join('\n');
 }
 

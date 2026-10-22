@@ -25,7 +25,7 @@ export type CoachProfile = {
 
 export type ActiveProgram = {
 	name: string;
-	weeks: number;
+	weeks: number | null; // null = open-ended repeating cycle
 	deloadWeek: number | null;
 	progression: string;
 	startedAt: string; // ISO
@@ -44,11 +44,30 @@ export type PlanExercise = {
 };
 export type CoachPlan = {
 	name: string;
-	weeks: number;
+	weeks: number | null; // null = open-ended repeating cycle
 	deloadWeek: number | null;
 	progression: string;
-	days: { name: string; dayOfWeek?: string; exercises: PlanExercise[] }[];
+	days: { name: string; dayOfWeek?: string | null; estMinutes: number; exercises: PlanExercise[] }[];
 };
+
+/** Our own time estimate for a day: ~1 min per set + its rest, + 5 min warm-up/changeovers. */
+export function dayMinutes(exercises: { sets: number; restSec: number }[]) {
+	return Math.round(5 + exercises.reduce((m, x) => m + x.sets * (60 + x.restSec), 0) / 60);
+}
+
+/** Objective problems with a plan that the model is asked to fix (one retry). */
+export function planProblems(plan: CoachPlan, profile: CoachProfile): string[] {
+	const out: string[] = [];
+	const max = profile.sessionMin;
+	for (const d of plan.days) {
+		const min = dayMinutes(d.exercises);
+		if (max && min > max + 5)
+			out.push(`"${d.name}" takes about ${min} minutes (sets × (1 min + rest) + 5), over their ${max}-minute limit.`);
+	}
+	const unknown = plan.days.flatMap((d) => d.exercises.filter((x) => !x.exerciseId).map((x) => x.name));
+	if (unknown.length) out.push(`Not in the exercise library (use only library names): ${unknown.join(', ')}.`);
+	return out;
+}
 
 export function getProfile(): CoachProfile {
 	const p = repo.getSettings().profile ?? {};
@@ -106,22 +125,23 @@ export function resolvePlan(raw: unknown): CoachPlan | null {
 	const byName = new Map(lib.map((e) => [norm(e.name), e.id]));
 	return {
 		name: String(p.name ?? 'Program'),
-		weeks: Number(p.weeks) || 6,
+		weeks: Number(p.weeks) > 0 ? Number(p.weeks) : null,
 		deloadWeek: p.deloadWeek == null ? null : Number(p.deloadWeek),
 		progression: String(p.progression ?? ''),
 		days: p.days.map((d) => ({
 			name: String(d.name),
-			dayOfWeek: d.dayOfWeek,
+			dayOfWeek: d.dayOfWeek ?? null,
+			estMinutes: 0,
 			exercises: (d.exercises ?? []).map((x) => ({
-				name: String(x.name),
-				exerciseId: byName.get(norm(String(x.name))) ?? null,
+				name: String(x.name).replace(/\s*\[[^\]]*\]\s*$/, ''), // model may echo "[equipment]"
+				exerciseId: byName.get(norm(String(x.name).replace(/\s*\[[^\]]*\]\s*$/, ''))) ?? null,
 				sets: Math.max(1, Math.round(Number(x.sets) || 3)),
 				reps: Math.max(1, Math.round(Number(x.reps) || 8)),
 				restSec: Math.max(15, Math.round(Number(x.restSec) || 90)),
 				weightKg: x.weightKg == null || !Number.isFinite(Number(x.weightKg)) ? null : Number(x.weightKg),
 				notes: x.notes ? String(x.notes) : undefined
 			}))
-		}))
+		})).map((d) => ({ ...d, estMinutes: dayMinutes(d.exercises) }))
 	};
 }
 
@@ -161,6 +181,7 @@ export function saveProgram(plan: CoachPlan) {
 
 /** Current week of the active program, 1-based, capped at its length. */
 export function programWeek(p: ActiveProgram, now = new Date()) {
+	if (!p.weeks) return null;
 	const w = Math.floor((now.getTime() - new Date(p.startedAt).getTime()) / (7 * 864e5)) + 1;
 	return Math.min(Math.max(1, w), p.weeks);
 }

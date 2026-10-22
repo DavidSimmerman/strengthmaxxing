@@ -66,7 +66,27 @@ const LIB: [string, string, string, number, boolean, number][] = [
 	['Ab Wheel Rollout', 'core', 'bodyweight', 5.0, true, 60],
 	['Russian Twist', 'core', 'bodyweight', 4.0, true, 45],
 	['Kettlebell Swing', 'glutes', 'kettlebell', 8.0, false, 90],
-	['Farmer Carry', 'core', 'dumbbell', 6.0, false, 90]
+	['Farmer Carry', 'core', 'dumbbell', 6.0, false, 90],
+	['Smith Machine Squat', 'quads', 'smith machine', 6.0, false, 150],
+	['Smith Machine Bench Press', 'chest', 'smith machine', 5.0, false, 120],
+	['Smith Machine Incline Press', 'chest', 'smith machine', 5.0, false, 120],
+	['Smith Machine Shoulder Press', 'shoulders', 'smith machine', 5.0, false, 120],
+	['Smith Machine Row', 'back', 'smith machine', 5.0, false, 90],
+	['Smith Machine Romanian Deadlift', 'hamstrings', 'smith machine', 5.0, false, 120],
+	['Smith Machine Hip Thrust', 'glutes', 'smith machine', 5.0, false, 90],
+	['Smith Machine Split Squat', 'quads', 'smith machine', 5.0, false, 90],
+	['Smith Machine Calf Raise', 'calves', 'smith machine', 4.0, false, 60],
+	['Smith Machine Close-Grip Press', 'triceps', 'smith machine', 5.0, false, 90],
+	['Cable Lateral Raise', 'shoulders', 'cable', 3.5, false, 60],
+	['Cable Row', 'back', 'cable', 4.0, false, 90],
+	['Cable Pull-Through', 'glutes', 'cable', 4.0, false, 75],
+	['Cable Woodchop', 'core', 'cable', 4.0, false, 45],
+	['Cable Overhead Tricep Extension', 'triceps', 'cable', 3.5, false, 60],
+	['Cable Leg Curl', 'hamstrings', 'cable', 3.5, false, 60],
+	['Cable Kickback', 'glutes', 'cable', 3.5, false, 60],
+	['Bench Dip', 'triceps', 'bodyweight', 5.0, true, 60],
+	['Dumbbell Pullover', 'back', 'dumbbell', 4.0, false, 75],
+	['Dumbbell Step-Up', 'quads', 'dumbbell', 5.0, false, 75]
 ];
 
 /** Idempotent — safe to run on every boot. Inserts any library exercise not yet present by name,

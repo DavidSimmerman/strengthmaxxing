@@ -11,7 +11,7 @@ export const GET: RequestHandler = () => {
 	}
 };
 
-const CATEGORIES = ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell'];
+const CATEGORIES = ['barbell', 'smith machine', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell'];
 
 // POST /api/exercises body {name, muscle, category, isBodyweight?, defaultRestSec?, met?} → 201
 export const POST: RequestHandler = async ({ request }) => {

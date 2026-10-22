@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 				units: repo.getSettings().units,
 				request: (b.request as string | undefined) ?? '',
 				history: coach.historySummary(),
-				library: repo.listExercises().map((e) => e.name),
+				library: repo.listExercises().map((e) => `${e.name} [${e.category}]`),
 				currentPlan: active?.plan
 			},
 			fetch

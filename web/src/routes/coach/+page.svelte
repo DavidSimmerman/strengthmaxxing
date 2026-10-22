@@ -185,7 +185,9 @@
 		<p class="mt-1 text-xs text-zinc-500">
 			{summary || 'Set your goal, schedule and equipment in Profile.'}
 			{#if data.program}
-				· <span class="text-accent2">{data.program.name}, week {data.program.week} of {data.program.weeks}</span>
+				· <span class="text-accent2"
+					>{data.program.name}{data.program.weeks ? `, week ${data.program.week} of ${data.program.weeks}` : ''}</span
+				>
 			{/if}
 		</p>
 
@@ -271,13 +273,18 @@
 					{@const plan = m.plan}
 					<div class="mr-6 rounded-2xl border border-line bg-panel p-3">
 						<p class="font-black">{plan.name}</p>
-						<div class="my-2 flex gap-1">
-							{#each { length: plan.weeks } as _, i (i)}
-								<div class="h-1.5 flex-1 rounded-full {plan.deloadWeek === i + 1 ? 'bg-zinc-600' : 'bg-line'}"></div>
-							{/each}
-						</div>
-						<p class="mb-2 text-xs text-zinc-500">
-							{plan.weeks} weeks{plan.deloadWeek ? `, week ${plan.deloadWeek} is a deload` : ''}. {plan.progression}
+						{#if plan.weeks}
+							<div class="my-2 flex gap-1">
+								{#each { length: plan.weeks } as _, i (i)}
+									<div class="h-1.5 flex-1 rounded-full {plan.deloadWeek === i + 1 ? 'bg-zinc-600' : 'bg-line'}"></div>
+								{/each}
+							</div>
+						{/if}
+						<p class="mb-2 mt-1 text-xs text-zinc-500">
+							{plan.weeks
+								? `${plan.weeks} weeks${plan.deloadWeek ? `, week ${plan.deloadWeek} is a deload` : ''}.`
+								: `${plan.days.length}-day cycle, repeat in order.`}
+							{plan.progression}
 						</p>
 						{#each plan.days as d, di (di)}
 							<button
@@ -285,7 +292,9 @@
 								class="flex w-full justify-between border-t border-line py-1.5 text-left text-[13px]"
 							>
 								<span class="font-semibold">{d.dayOfWeek ? `${d.dayOfWeek} · ` : ''}{d.name}</span>
-								<span class="text-zinc-500">{d.exercises.length} lifts {openPlan[`${m.id}:${di}`] ? '▴' : '▾'}</span>
+								<span class="shrink-0 text-zinc-500"
+									>{d.exercises.length} lifts · ~{d.estMinutes ?? '?'} min {openPlan[`${m.id}:${di}`] ? '▴' : '▾'}</span
+								>
 							</button>
 							{#if openPlan[`${m.id}:${di}`]}
 								<ul class="mb-2 flex flex-col gap-0.5 pl-1 text-[13px]">

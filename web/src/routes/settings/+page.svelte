@@ -4,7 +4,7 @@
 	let { data, form } = $props();
 
 	const muscles = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core'];
-	const categories = ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell'];
+	const categories = ['barbell', 'smith machine', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell'];
 	const field =
 		'rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent';
 </script>
