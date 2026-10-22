@@ -81,15 +81,25 @@ async function answer(
 		conversation,
 		history: coach.historySummary(),
 		library: repo.listExercises().map((e) => `${e.name} [${e.category}]`),
-		currentPlan: currentPlan ?? undefined
+		currentPlan: currentPlan ?? undefined,
+		workouts: coach.workoutsBrief()
 	};
 	let feedback: string[] = [];
 	for (let attempt = 0; ; attempt++) {
 		const data = await coach.callAgent('/plan', { ...base, profile: coach.getProfile(), feedback }, fetchFn);
 		if (data.profile && typeof data.profile === 'object') coach.saveProfile(cleanProfile(data.profile as Record<string, unknown>));
 		const plan = coach.resolvePlan(data.plan);
+		const workoutEdit = data.workoutEdit ? coach.resolveWorkoutEdit(data.workoutEdit) : null;
 		feedback = plan ? coach.planProblems(plan, coach.getProfile()) : [];
+		const unknown = workoutEdit?.after.filter((x) => !x.exerciseId).map((x) => x.name) ?? [];
+		if (unknown.length) feedback.push(`Not in the exercise library (use only library names): ${unknown.join(', ')}.`);
 		if (feedback.length && attempt === 0) continue;
+		if (workoutEdit)
+			return {
+				text: String(data.reply || 'Here is the change.'),
+				workoutEdit,
+				sources: cleanSources(data.sources)
+			};
 		const changed = plan && (!currentPlan || !coach.samePlan(plan, currentPlan));
 		return {
 			text: String(data.reply || data.rationale || 'Here you go.'),

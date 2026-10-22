@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, Dumbbell } from '@lucide/svelte';
+	import { ArrowRight, Check, Dumbbell, Minus, Plus } from '@lucide/svelte';
 	import { tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { wt } from '$lib/units.svelte';
@@ -91,6 +91,41 @@
 		busy = null;
 		if (res.ok) {
 			m.saved = true;
+			invalidateAll();
+		}
+	}
+
+	// ---- single-workout edit card ----
+	type EditEx = { name: string; sets: number; reps: number; restSec: number; weightKg: number | null };
+	const fmtEx = (x: EditEx) => `${x.sets}×${x.reps}${x.weightKg ? ` · ${wt(x.weightKg)}` : ''}`;
+	const minutes = (xs: EditEx[]) => Math.round(5 + xs.reduce((m, x) => m + x.sets * (60 + x.restSec), 0) / 60);
+	function editRows(ed: { before: EditEx[]; after: EditEx[] }) {
+		const before = new Map(ed.before.map((x) => [x.name, x]));
+		const rows: { name: string; status: 'same' | 'changed' | 'added' | 'removed'; was: string; now: string }[] = [];
+		for (const x of ed.after) {
+			const b = before.get(x.name);
+			const now = fmtEx(x);
+			if (!b) rows.push({ name: x.name, status: 'added', was: '', now });
+			else rows.push({ name: x.name, status: fmtEx(b) === now ? 'same' : 'changed', was: fmtEx(b), now });
+		}
+		// show a removed exercise where it used to be, so a swap reads as "this → that"
+		const kept = new Set(ed.after.map((x) => x.name));
+		ed.before.forEach((b, i) => {
+			if (!kept.has(b.name))
+				rows.splice(Math.min(i, rows.length), 0, { name: b.name, status: 'removed', was: '', now: fmtEx(b) });
+		});
+		return rows;
+	}
+	async function saveEdit(m: ChatMessage) {
+		busy = m.id;
+		const res = await fetch('/api/coach/workout-edit', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ messageId: m.id })
+		});
+		busy = null;
+		if (res.ok) {
+			m.editSaved = true;
 			invalidateAll();
 		}
 	}
@@ -338,6 +373,44 @@
 								disabled={busy === m.id}
 								class="mt-2 w-full rounded-xl bg-accent2 py-2 text-sm font-bold text-ink disabled:opacity-60"
 								>{busy === m.id ? 'Saving…' : data.program?.name === plan.name ? 'Save changes' : `Save as ${plan.days.length} workouts`}</button
+							>
+						{/if}
+					</div>
+				{/if}
+
+				{#if m.workoutEdit}
+					{@const ed = m.workoutEdit}
+					{@const rows = editRows(ed)}
+					<div class="mr-6 rounded-2xl border border-line bg-panel p-3">
+						<p class="mb-1 font-black">{ed.workoutName}</p>
+						<p class="mb-2 text-xs text-zinc-500">~{minutes(ed.before)} min → ~{minutes(ed.after)} min</p>
+						<ul class="flex flex-col text-[13px]">
+							{#each rows as r, ri (ri)}
+								<li class="flex items-baseline justify-between gap-2 border-t border-line py-1.5 first:border-0">
+									<span class="flex items-baseline gap-1.5">
+										{#if r.status === 'added'}<Plus class="h-3 w-3 shrink-0 text-accent2" />{:else if r.status === 'removed'}<Minus
+												class="h-3 w-3 shrink-0 text-accent"
+											/>{:else if r.status === 'changed'}<ArrowRight class="h-3 w-3 shrink-0 text-[#f5c518]" />{:else}<span class="w-3"></span>{/if}
+										<span class={r.status === 'removed' ? 'text-zinc-600 line-through' : 'text-zinc-200'}>{r.name}</span>
+									</span>
+									<span class="shrink-0 tabular-nums text-zinc-500">
+										{#if r.status === 'changed'}<span class="text-zinc-600 line-through">{r.was}</span> {/if}<span
+											class={r.status === 'removed' ? 'text-zinc-600 line-through' : r.status === 'same' ? '' : 'text-zinc-200'}>{r.now}</span
+										>
+									</span>
+								</li>
+							{/each}
+						</ul>
+						{#if m.editSaved}
+							<p class="mt-2 rounded-xl bg-accent2/15 py-2 text-center text-sm font-bold text-accent2">
+								<Check class="mr-1 inline h-4 w-4" />Saved to {ed.workoutName}
+							</p>
+						{:else}
+							<button
+								onclick={() => saveEdit(m)}
+								disabled={busy === m.id}
+								class="mt-2 w-full rounded-xl bg-accent2 py-2 text-sm font-bold text-ink disabled:opacity-60"
+								>{busy === m.id ? 'Saving…' : `Save changes to ${ed.workoutName}`}</button
 							>
 						{/if}
 					</div>

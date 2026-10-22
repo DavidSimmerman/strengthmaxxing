@@ -170,7 +170,8 @@ function planPrompt(input) {
     '{"requirements":[string],' +
     '"profile":{"goal"?:string,"daysPerWeek"?:number,"sessionMin"?:number,"experience"?:string,' +
     '"equipment"?:[string],"avoid"?:string,"notes"?:string},' +
-    '"plan":{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
+    '"workoutEdit":{"workoutId":number,"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null}]}|null,' +
+    '"plan":null|{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
     '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|null,"estMinutes":number,' +
     '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"notes":string}]}]},' +
     '"sources":[{"title":string,"url":string}],"rationale":string,"reply":string}';
@@ -239,6 +240,17 @@ function planPrompt(input) {
         'revise THIS plan: change only what the request requires and keep everything else identical ' +
         '(same number of days, same structure), then say what changed in "reply". If they only ask a ' +
         'question, return this plan unchanged and answer in "reply".'
+    );
+  }
+  if (input.workouts?.length) {
+    lines.push(
+      '',
+      `Their saved workouts (JSON; weights in kg): ${JSON.stringify(input.workouts)}`,
+      'If they ask to change ONE of these saved workouts by name (e.g. "swap rows for pulldowns in ' +
+        'Pull A", "make Legs shorter"), return "workoutEdit" with that workoutId and its COMPLETE new ' +
+        'exercise list in order: apply only the requested change and copy every other exercise exactly ' +
+        '(same sets, reps, rest, weight). Set "plan" to null and describe the change in "reply". ' +
+        'Otherwise set "workoutEdit" to null.'
     );
   }
   if (input.feedback?.length) {

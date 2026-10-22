@@ -367,7 +367,75 @@ export type ChatMessage = {
 		adjustments: Adjustment[];
 	};
 	applied?: string[]; // names of adjustments applied
+	workoutEdit?: WorkoutEdit;
+	editSaved?: boolean;
 };
+
+type EditExercise = { name: string; exerciseId: number | null; sets: number; reps: number; restSec: number; weightKg: number | null };
+export type WorkoutEdit = { workoutId: number; workoutName: string; before: EditExercise[]; after: EditExercise[] };
+
+/** Saved workouts as the coach sees them (for "change X in Pull A"). */
+export function workoutsBrief() {
+	return repo.listWorkouts().map((w) => ({
+		id: w.id,
+		name: w.name,
+		exercises: w.exercises.map((we) => ({
+			name: we.exercise.name,
+			sets: we.targetSets,
+			reps: we.targetReps,
+			restSec: we.restSec,
+			weightKg: we.targetWeightKg || null
+		}))
+	}));
+}
+
+/** Turn the model's workoutEdit into a before/after we can show and save; null if unusable. */
+export function resolveWorkoutEdit(raw: unknown): WorkoutEdit | null {
+	const e = raw as { workoutId?: unknown; exercises?: unknown } | null;
+	if (!e || !Array.isArray(e.exercises)) return null;
+	const w = repo.getWorkout(Number(e.workoutId));
+	if (!w) return null;
+	// reuse the plan resolver for name → library id mapping
+	const mapped = resolvePlan({ name: w.name, days: [{ name: w.name, exercises: e.exercises }] });
+	if (!mapped) return null;
+	return {
+		workoutId: w.id,
+		workoutName: w.name,
+		before: w.exercises.map((we) => ({
+			name: we.exercise.name,
+			exerciseId: we.exerciseId,
+			sets: we.targetSets,
+			reps: we.targetReps,
+			restSec: we.restSec,
+			weightKg: we.targetWeightKg || null
+		})),
+		after: mapped.days[0].exercises.map(({ notes: _n, ...x }) => x)
+	};
+}
+
+/** Save an edit to its workout; keep the active program's copy of that day in step. */
+export function applyWorkoutEdit(edit: WorkoutEdit) {
+	repo.updateWorkout(edit.workoutId, {
+		exercises: edit.after
+			.filter((x) => x.exerciseId != null)
+			.map((x, i) => ({
+				exerciseId: x.exerciseId!,
+				orderIndex: i,
+				targetSets: x.sets,
+				targetReps: x.reps,
+				targetWeightKg: x.weightKg ?? 0,
+				restSec: x.restSec
+			}))
+	});
+	const p = getActiveProgram();
+	const idx = p?.workoutIds.indexOf(edit.workoutId) ?? -1;
+	if (p && idx >= 0 && p.plan.days[idx]) {
+		const days = p.plan.days.map((d, i) =>
+			i === idx ? { ...d, exercises: edit.after, estMinutes: dayMinutes(edit.after) } : d
+		);
+		setActiveProgram({ ...p, plan: { ...p.plan, days } });
+	}
+}
 const CHAT_MAX = 60;
 
 const PENDING_MAX_MS = 20 * 60_000; // research turns can take several minutes
