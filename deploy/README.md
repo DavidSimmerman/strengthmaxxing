@@ -4,7 +4,7 @@ Two containers: **web** (SvelteKit dashboard + JSON API, port 3000, owns the
 SQLite DB) and **agent** (Claude coach, port 8787, internal-only). The iOS /
 watchOS app talks only to **web**.
 
-`deploy/docker-compose.yml` wires both on a shared network so `web` reaches the
+`docker-compose.yml` (repo root) wires both on a shared network so `web` reaches the
 coach at `http://agent:8787`, and mounts a named volume (`smx-data`) for the
 SQLite database.
 
@@ -15,10 +15,9 @@ SQLite database.
 Deploy both services from the single compose file.
 
 1. **New Resource → Docker Compose** in Coolify, pointed at this git repo.
-2. Set **Base Directory** to the repo root and **Compose file** to
-   `deploy/docker-compose.yml`. (The build contexts are `../web` and `../agent`,
-   relative to the compose file, so they resolve to the repo's `web/` and
-   `agent/`.)
+2. Set **Base Directory** to `/` and **Docker Compose Location** to
+   `/docker-compose.yml`. Coolify resolves build contexts from the repo root, which is
+   why the compose file lives there with `./web` and `./agent`.
 3. **Environment variables** (Coolify → Environment): copy from
    [`../.env.example`](../.env.example) and fill in:
    - `API_TOKEN` — required in prod. Generate: `openssl rand -hex 32`. The
@@ -99,5 +98,5 @@ HealthKit locally.
 ## Sanity check the compose file locally
 
 ```sh
-docker compose -f deploy/docker-compose.yml config -q   # validates YAML/refs
+docker compose config -q   # validates YAML/refs
 ```

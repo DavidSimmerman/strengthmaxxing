@@ -1,9 +1,5 @@
-# strengthmaxxing — Coolify / Docker Compose deployment
-#
-# Build contexts are relative to this file, so we point one level up (../web,
-# ../agent). In Coolify, set the compose "Base Directory" to the repo root and
-# the compose file path to deploy/docker-compose.yml (or copy this file to the
-# repo root) so the ../ contexts resolve.
+# strengthmaxxing — Coolify / Docker Compose deployment (Coolify: Base Directory "/",
+# Docker Compose Location "/docker-compose.yml"). Build contexts are relative to the repo root.
 #
 # Two services on one network:
 #   web   -> SvelteKit dashboard + JSON API (port 3000), owns the sqlite DB
@@ -12,7 +8,7 @@
 services:
   web:
     build:
-      context: ../web
+      context: ./web
       dockerfile: Dockerfile
     restart: unless-stopped
     # Published on the server so a Cloudflare tunnel can reach it at localhost:3417
@@ -54,7 +50,7 @@ services:
 
   agent:
     build:
-      context: ../agent
+      context: ./agent
       dockerfile: Dockerfile
     restart: unless-stopped
     # No published ports: agent is internal-only, reachable at http://agent:8787
