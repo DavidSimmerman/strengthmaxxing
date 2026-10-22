@@ -9,7 +9,10 @@ try {
 	migrate(db, { migrationsFolder: './drizzle' });
 	seedExercises();
 } catch (e) {
+	// No schema = every request fails. Crash so the deploy shows unhealthy instead of
+	// serving 500s.
 	console.error('[boot] migrate/seed failed:', e);
+	process.exit(1);
 }
 
 const PUBLIC = ['/login', '/healthz'];
