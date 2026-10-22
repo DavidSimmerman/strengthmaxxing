@@ -193,7 +193,18 @@ export const actions: Actions = {
 		const fd = await request.formData();
 		const notes = (fd.get('notes') as string) || undefined;
 		const bw = fd.get('bodyweightKg') ? Number(fd.get('bodyweightKg')) : undefined;
-		repo.finishSession(id, { notes, bodyweightKg: bw });
+		// Inside the iPhone app the page adds heart-rate calories from Apple Health.
+		const kcal = Number(fd.get('activeKcal'));
+		const avgHr = Number(fd.get('avgHr'));
+		const measured =
+			fd.get('activeKcal') && Number.isFinite(kcal) && kcal >= 0 && kcal <= 5000
+				? { activeKcal: kcal, avgHr: avgHr >= 30 && avgHr <= 250 ? avgHr : null, kcalSource: 'heart_rate' as const }
+				: undefined;
+		repo.finishSession(id, {
+			notes,
+			bodyweightKg: bw && bw >= 25 && bw <= 350 ? bw : undefined,
+			measured
+		});
 		throw redirect(303, `/history/${id}`);
 	}
 };

@@ -36,9 +36,9 @@
 </svelte:head>
 
 {#if bare}
-	<main class="mx-auto max-w-3xl px-4 py-6">{@render children()}</main>
+	<main class="safe-top mx-auto max-w-3xl px-4 py-6">{@render children()}</main>
 {:else}
-<div class="min-h-screen pb-24 md:pb-0 md:pl-56">
+<div class="safe-bottom-nav min-h-screen md:pl-56">
 	<!-- desktop sidebar -->
 	<aside
 		class="fixed left-0 top-0 hidden h-full w-56 flex-col border-r border-line bg-panel px-4 py-6 md:flex"
@@ -64,13 +64,13 @@
 		</nav>
 	</aside>
 
-	<main class="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
+	<main class="safe-top mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
 		{@render children()}
 	</main>
 
 	<!-- mobile bottom bar -->
 	<nav
-		class="fixed bottom-0 left-0 z-20 flex w-full justify-around border-t border-line bg-panel/95 backdrop-blur md:hidden"
+		class="safe-bottom fixed bottom-0 left-0 z-20 flex w-full justify-around border-t border-line bg-panel/95 backdrop-blur md:hidden"
 	>
 		{#each nav as item (item.href)}
 			<a

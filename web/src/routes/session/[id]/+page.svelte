@@ -2,6 +2,8 @@
 	import { X, Trophy } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import { isApp, native } from '$lib/native';
 	import { Zap } from '@lucide/svelte';
 	import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
@@ -65,6 +67,40 @@
 	});
 
 	let confirmFinish = $state(false);
+
+	// Inside the iPhone app: add heart-rate calories from Apple Health to the finish, then
+	// save the workout to Apple Health. In a browser this does nothing extra.
+	const finishInApp: SubmitFunction = async ({ formData }) => {
+		const start = new Date(data.session.startedAt).getTime();
+		const end = Date.now();
+		if (isApp()) {
+			const hr = await native<{ kcal: number | null; avgHr?: number; weightKg: number | null }>(
+				'heartRateCalories',
+				{ start, end }
+			);
+			if (hr?.kcal != null) {
+				formData.set('activeKcal', String(Math.round(hr.kcal)));
+				if (hr.avgHr) formData.set('avgHr', String(Math.round(hr.avgHr)));
+			}
+			if (hr?.weightKg) formData.set('bodyweightKg', String(hr.weightKg));
+		}
+		return async ({ result, update }) => {
+			if (isApp() && result.type === 'redirect') {
+				const s = await fetch(`/api/sessions/${data.session.id}`)
+					.then((r) => (r.ok ? r.json() : null))
+					.catch(() => null);
+				await native('saveWorkout', {
+					start,
+					end,
+					kcal: s?.estimatedKcal ?? null,
+					name: data.session.name,
+					sessionId: data.session.id,
+					volumeKg: s?.totalVolumeKg ?? null
+				});
+			}
+			await update();
+		};
+	};
 </script>
 
 <header class="mb-4 flex items-center justify-between gap-3">
@@ -179,7 +215,7 @@
 			<p class="mt-2 text-center text-xs text-zinc-600">Log at least one set to finish.</p>
 		{/if}
 	{:else}
-		<form method="POST" action="?/finish" use:enhance class="rounded-2xl border border-accent bg-panel p-4">
+		<form method="POST" action="?/finish" use:enhance={finishInApp} class="rounded-2xl border border-accent bg-panel p-4">
 			<p class="mb-3 text-sm font-semibold">Wrap it up? Volume & kcal will be computed.</p>
 			<div class="flex gap-2">
 				<button

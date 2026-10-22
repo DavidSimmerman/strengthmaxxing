@@ -1,10 +1,39 @@
 <script lang="ts">
 	import { Check } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
+	import { onMount } from 'svelte';
+	import { Watch } from '@lucide/svelte';
+	import { isApp, native } from '$lib/native';
 	let { data, form } = $props();
 
 	const muscles = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'quads', 'hamstrings', 'glutes', 'calves', 'core'];
 	const categories = ['barbell', 'smith machine', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell'];
+	// Apple Watch hookup — only inside the iPhone app.
+	let inApp = $state(false);
+	let watchInfo = $state<{ watchPaired?: boolean; watchAppInstalled?: boolean } | null>(null);
+	let watchMsg = $state('');
+	let connecting = $state(false);
+	onMount(async () => {
+		inApp = isApp();
+		if (inApp) watchInfo = await native('info');
+	});
+	const WATCH_RESULT: Record<string, string> = {
+		sent: 'Sent. Open StrengthMaxxing on your watch; it is signed in.',
+		noWatch: "No watch with StrengthMaxxing installed. Install it on the watch, then try again.",
+		notReady: 'The watch connection is still starting. Try again in a few seconds.'
+	};
+	async function connectWatch() {
+		connecting = true;
+		watchMsg = '';
+		const creds = await fetch('/api/device-credentials').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+		if (!creds) watchMsg = "Couldn't get the access token from the server.";
+		else {
+			const r = await native<{ result: string }>('connectWatch', creds);
+			watchMsg = r ? (WATCH_RESULT[r.result] ?? `Couldn't send: ${r.result}`) : "The app couldn't reach the watch.";
+		}
+		connecting = false;
+	}
+
 	const field =
 		'rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent';
 </script>
@@ -46,6 +75,29 @@
 	{#if form?.error}<p class="text-sm text-accent">{form.error}</p>{/if}
 	<button class="rounded-xl bg-accent py-3 font-bold text-ink">{#if form?.saved}<Check class="mr-1 inline h-4 w-4" />Saved{:else}Save{/if}</button>
 </form>
+
+{#if inApp}
+	<section class="mb-6 rounded-2xl border border-line bg-panel p-5">
+		<h2 class="mb-1 flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-zinc-400">
+			<Watch class="h-4 w-4" />Apple Watch
+		</h2>
+		<p class="mb-3 text-xs text-zinc-500">
+			{watchInfo?.watchAppInstalled
+				? 'StrengthMaxxing is installed on your watch.'
+				: watchInfo?.watchPaired
+					? 'Your watch is paired, but StrengthMaxxing is not installed on it yet.'
+					: 'No paired watch found.'}
+			Sends your server address and access token so the watch can log workouts.
+		</p>
+		<button
+			onclick={connectWatch}
+			disabled={connecting}
+			class="w-full rounded-xl border border-line py-3 text-sm font-semibold disabled:opacity-60"
+			>{connecting ? 'Sending…' : 'Connect Apple Watch'}</button
+		>
+		{#if watchMsg}<p class="mt-2 text-sm text-zinc-300">{watchMsg}</p>{/if}
+	</section>
+{/if}
 
 <section class="mb-6 rounded-2xl border border-line bg-panel p-5">
 	<h2 class="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-400">Custom exercises</h2>

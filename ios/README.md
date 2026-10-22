@@ -11,15 +11,20 @@ brew install xcodegen
 cd ios && xcodegen && open StrengthMaxxing.xcodeproj
 ```
 
-1. In `project.yml` set `DEVELOPMENT_TEAM` (and `APP_BUNDLE_ID` if you want another
-   prefix), then re-run `xcodegen`. Don't edit the generated project — it's overwritten.
-2. Run the **StrengthMaxxing** scheme on your iPhone; the watch app is embedded and installs
-   with it (or run **StrengthMaxxingWatch** directly on the watch).
-3. iPhone ▸ Settings tab: the server defaults to `https://strengthmaxxing.simmerman.tech`;
-   paste the API token. URL + token are pushed to the watch automatically.
+1. `DEVELOPMENT_TEAM` is set in `project.yml` (same team as Mile A Day). Re-run `xcodegen`
+   after pulling changes that add or remove files. Don't edit the generated project.
+2. Run the **StrengthMaxxing** scheme on your iPhone. Run **StrengthMaxxingWatch** on the
+   watch (needs Developer Mode on the watch: Settings > Privacy & Security).
+3. In the iPhone app, sign in with the dashboard password, then Settings > **Connect Apple
+   Watch** sends the server address + API token to the watch.
 
-Pure-logic tests (rep counter, calibrator, rest alarm, outbox, units): `cd ios && swift test`,
-or ⌘U in Xcode (StrengthMaxxingCoreTests).
+## The iPhone app is the web dashboard
+
+`StrengthMaxxing iOS/` is a native shell (`WebShellView`, a WKWebView) on the live site, so
+deploying the web app updates the phone app with no rebuild. `NativeBridge` gives the page
+what a browser can't: Apple Health (heart-rate calories, saving the workout) and handing
+the token to the watch. The web side is `web/src/lib/native.ts`; everything has a plain-web
+fallback. Rebuild in Xcode only when native code changes.
 
 ## Layout
 
@@ -35,7 +40,7 @@ StrengthMaxxing/            shared by both apps
   Models/                   API models (v2 contract), superset planner
   Networking/ Settings/ Sync/ Health/
 StrengthMaxxing Watch App/  Motion (CoreMotion → RepCounter), Session (VM, rest alarm, voice, HKWorkoutSession), Views
-StrengthMaxxing iOS/        Workouts / History / Settings, set edit/delete, End Workout
+StrengthMaxxing iOS/        WebShellView (WKWebView on the live site) + NativeBridge (Health, watch hookup)
 Tests/StrengthMaxxingTests/ synthetic-signal tests
 ```
 

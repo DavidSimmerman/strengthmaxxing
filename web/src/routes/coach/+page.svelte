@@ -200,7 +200,7 @@
 		'rounded-xl border border-line bg-ink px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-accent';
 </script>
 
-<div class="-my-6 flex h-[calc(100dvh-6rem)] flex-col md:-my-10 md:h-dvh">
+<div class="-my-6 flex h-[calc(100dvh-6rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] flex-col md:-my-10 md:h-dvh">
 	<!-- header -->
 	<header class="shrink-0 border-b border-line pt-6 pb-3 md:pt-10">
 		<div class="flex items-center justify-between gap-3">

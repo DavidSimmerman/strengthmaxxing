@@ -110,6 +110,20 @@ final class HealthKitManager: ObservableObject {
         energyKcal: Double?,
         session: Session
     ) async throws {
+        try await saveStrengthWorkout(start: start, end: end, energyKcal: energyKcal,
+                                      sessionId: session.id, name: session.name,
+                                      volumeKg: session.totalVolumeKg)
+    }
+
+    /// Same, from plain values (the web app inside the iPhone shell calls this).
+    func saveStrengthWorkout(
+        start: Date,
+        end: Date,
+        energyKcal: Double?,
+        sessionId: Int?,
+        name: String?,
+        volumeKg: Double?
+    ) async throws {
         guard isHealthDataAvailable else { return }
 
         let config = HKWorkoutConfiguration()
@@ -135,12 +149,10 @@ final class HealthKitManager: ObservableObject {
         }
 
         // Metadata.
-        var metadata: [String: Any] = [
-            HKMetadataKeyWorkoutBrandName: "StrengthMaxxing",
-            "sessionId": session.id,
-        ]
-        if let name = session.name { metadata["workoutName"] = name }
-        if let volume = session.totalVolumeKg { metadata["totalVolumeKg"] = volume }
+        var metadata: [String: Any] = [HKMetadataKeyWorkoutBrandName: "StrengthMaxxing"]
+        if let sessionId { metadata["sessionId"] = sessionId }
+        if let name { metadata["workoutName"] = name }
+        if let volumeKg { metadata["totalVolumeKg"] = volumeKg }
         metadata[HKMetadataKeyIndoorWorkout] = true
         try await builder.addMetadata(metadata)
 
