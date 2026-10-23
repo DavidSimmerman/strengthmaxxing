@@ -6,7 +6,7 @@
 	import { isApp, native } from '$lib/native';
 	import RepTimeline from '$lib/components/RepTimeline.svelte';
 	import { num, mmss, dateTime, muscleColor, readinessBand, supersetLabel } from '$lib/ui';
-	import { wt, vol as fmtVol, toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
+	import { wt, vol as fmtVol, toDisplay, fromDisplay, units } from '$lib/units.svelte';
 	import Stepper from '$lib/components/Stepper.svelte';
 	import type { PageData } from './$types';
 
@@ -223,7 +223,7 @@
 								<input type="hidden" name="weightKg" value={fromDisplay(editWeight)} />
 								<div class="grid grid-cols-2 gap-2">
 									<Stepper bind:value={editReps} label="Reps" step={1} min={1} max={100} accent="accent2" />
-									<Stepper bind:value={editWeight} label="Weight" step={weightStep(ex.category)} min={0} unit={units()} />
+									<Stepper bind:value={editWeight} label="Weight" category={ex.category} min={0} unit={units()} />
 								</div>
 								<div class="mt-2 flex gap-2 text-sm">
 									<button formaction="?/deleteSet" class="rounded-lg px-3 py-2 font-semibold text-red-400 hover:bg-red-500/10"
@@ -239,12 +239,13 @@
 						<div class="rounded-xl bg-ink p-3" class:opacity-60={s.isWarmup}>
 							<button type="button" onclick={() => startEdit(s)} title="Edit set" class="flex w-full items-center gap-3 text-left text-sm tabular-nums">
 								<span class="w-6 text-center font-bold text-zinc-500"
-									>{s.isWarmup ? 'W' : s.setIndex + 1}</span
+									>{s.isWarmup ? 'W' : s.setIndex + 1}{s.side ?? ''}</span
 								>
 								<span class="font-semibold">{s.reps || '—'} reps</span>
 								<span class="text-zinc-600">×</span>
 								<span class="font-semibold">{wt(s.weightKg)}</span>
 								{#if s.rpe}<span class="text-xs text-zinc-500">RPE {s.rpe}</span>{/if}
+								{#if s.restSec != null}<span class="text-xs text-zinc-500" title="Rest before this set">rest {mmss(s.restSec)}</span>{/if}
 								<span class="ml-auto text-xs text-zinc-500">e1RM {wt(s.e1rmKg)} <Pencil class="ml-1 inline h-3 w-3" /></span>
 							</button>
 							{#if s.repTimeline.length >= 3}

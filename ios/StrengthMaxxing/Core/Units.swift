@@ -46,13 +46,17 @@ enum Units {
         return s
     }
 
+    /// David's dumbbells (Bowflex SelectTech 552), per hand in lb: 2.5 lb steps to 25, then 5 lb,
+    /// then 52.5. Mirrors web/src/lib/equipment.ts.
+    static let dumbbellLb: [Double] = [5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 30, 35, 40, 45, 50, 52.5]
+
     /// Stepper increment in display units for an exercise category
-    /// (`barbell | dumbbell | machine | bodyweight | cable`).
+    /// (`barbell | dumbbell | machine | bodyweight | cable`). Dumbbells in lb use `dumbbellLb`.
     static func step(category: String?, unit: WeightUnit) -> Double {
         let cat = (category ?? "").lowercased()
         switch unit {
         case .lb:
-            return (cat == "dumbbell" || cat == "bodyweight") ? 2.5 : 5
+            return (cat == "dumbbell" || cat == "bodyweight" || cat == "cable") ? 2.5 : 5
         case .kg:
             if cat == "dumbbell" { return 2 }
             if cat == "bodyweight" { return 1 }
@@ -63,6 +67,13 @@ enum Units {
     /// One stepper press. Snaps to the step grid in display units: from 220.46 lb (100 kg)
     /// "+" goes to 225 and "−" to 220. Never below 0. Returns kg.
     static func stepped(kg: Double, direction: Int, category: String?, unit: WeightUnit) -> Double {
+        if unit == .lb, (category ?? "").lowercased() == "dumbbell" {
+            let v = toDisplay(kg: kg, unit: .lb)
+            let next = direction >= 0
+                ? (dumbbellLb.first { $0 > v + 1e-6 } ?? dumbbellLb.last!)
+                : (dumbbellLb.last { $0 < v - 1e-6 } ?? 0)
+            return toKg(next, unit: .lb)
+        }
         let s = step(category: category, unit: unit)
         let k = toDisplay(kg: kg, unit: unit) / s
         let n: Double

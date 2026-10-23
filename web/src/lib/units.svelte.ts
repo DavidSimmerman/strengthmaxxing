@@ -3,6 +3,8 @@
  * The current unit is app-wide state set by the root layout from the settings row,
  * so `wt()` re-renders everywhere when it changes.
  */
+import { stepLb, nextLb } from './equipment';
+
 export type Units = 'lb' | 'kg';
 export const KG_PER_LB = 0.45359237;
 
@@ -35,6 +37,18 @@ export function vol(kgVal: number | null | undefined, u: Units = state.units): s
 
 /** Stepper increment for an exercise category in the user's unit. */
 export function weightStep(category: string, u: Units = state.units): number {
-	if (u === 'lb') return category === 'dumbbell' || category === 'kettlebell' || category === 'bodyweight' ? 2.5 : 5;
+	if (u === 'lb') return stepLb(category);
 	return category === 'dumbbell' ? 2 : category === 'bodyweight' ? 1 : 2.5;
+}
+
+/**
+ * One +/− press on a weight, in the user's unit: lb walks the equipment's real settings (the
+ * dumbbells jump 25 → 30), kg a plain grid. Off-grid values snap to the next setting.
+ */
+export function weightNext(category: string, v: number, dir: 1 | -1, u: Units = state.units): number {
+	if (u === 'lb') return nextLb(category, v, dir);
+	const s = weightStep(category, u);
+	const k = v / s;
+	const n = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
+	return Math.max(0, Math.round(n * s * 100) / 100);
 }

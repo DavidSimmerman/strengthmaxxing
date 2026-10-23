@@ -169,11 +169,11 @@ function planPrompt(input) {
   const schema =
     '{"requirements":[string],' +
     '"profile":{"goal"?:string,"daysPerWeek"?:number,"sessionMin"?:number,"experience"?:string,' +
-    '"equipment"?:[string],"avoid"?:string,"notes"?:string},' +
-    '"workoutEdit":{"workoutId":number,"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null}]}|null,' +
+    '"equipment"?:[string],"avoid"?:string,"dislikes"?:[string],"notes"?:string},' +
+    '"workoutEdit":{"workoutId":number,"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"perSide":boolean}]}|null,' +
     '"plan":null|{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
     '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|null,"estMinutes":number,' +
-    '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"notes":string}]}]},' +
+    '"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"perSide":boolean,"notes":string}]}]},' +
     '"sources":[{"title":string,"url":string}],"rationale":string,"reply":string}';
   const lines = [
     SYSTEM_RULES,
@@ -186,6 +186,7 @@ function planPrompt(input) {
     `Training history (JSON; weights in kg; e1rm = estimated 1-rep max): ${JSON.stringify(input.history ?? {})}`,
     `Exercise library as "Name [equipment]". Use ONLY these exact names (without the bracket): ` +
       `${JSON.stringify(input.library ?? [])}`,
+    'Never program an exercise in profile.dislikes (they are left out of the library above).',
     'Use only exercises their equipment supports. "barbell" needs a barbell and rack and is NOT a Smith ' +
       'machine; "machine" means that specific machine (leg curl, leg press, pec deck...). When they list ' +
       'equipment, treat anything not listed as unavailable; bodyweight moves need only what they name ' +
@@ -206,7 +207,7 @@ function planPrompt(input) {
     'Research: you can search the web and read pages. When designing a new plan or making a substantive ' +
       'change, first look up current, reputable evidence relevant to THIS lifter (e.g. weekly sets per ' +
       'muscle for hypertrophy, training to failure with low set counts, combining lifting with heavy ' +
-      'running, ab training frequency). Prefer peer-reviewed reviews and recognized experts; ignore ' +
+      'running, ab training frequency, rest intervals between sets). Prefer peer-reviewed reviews and recognized experts; ignore ' +
       'listicles. Keep it to a few targeted searches. Skip research for small edits or quick questions. ' +
       'List what actually informed the plan in "sources" (empty when you did not research).',
     '',
@@ -217,13 +218,27 @@ function planPrompt(input) {
       'flexible rest days). Set weekdays only if they have a fixed weekly schedule.',
     '- weightKg = the starting working weight. Base it on their history (about 75-85% of e1rm for 5-8 ' +
       'reps); estimate a conservative start from related lifts when there is no history; null ONLY for ' +
-      'bodyweight moves. Round to what a US gym loads (2.27 kg = 5 lb steps for barbell/machine/cable, ' +
-      '1.13 kg = 2.5 lb for dumbbells).',
+      'bodyweight moves. ' + (input.rounding || 'Round to what a US gym loads (2.27 kg = 5 lb steps for ' +
+      'barbell/machine/cable, 1.13 kg = 2.5 lb for dumbbells).'),
     '- "progression": one or two sentences on how load/reps move session to session.',
+    '- "restSec" per exercise is part of the plan, chosen from evidence for their goal, not a ' +
+      'default. For hypertrophy (Singer 2024 meta-analysis: >60 s beats shorter, little gain past ~90 s ' +
+      'for isolation; Schoenfeld 2016: 3 min beat 1 min on compounds): heavy barbell/Smith compounds ' +
+      '150-240 s (default 180), machine or dumbbell compounds 90-180 s (default 120), isolation 60-120 s ' +
+      '(default 90), abs/core 45-90 s (default 60). Add ~30 s to lower-body compounds for someone who ' +
+      'also runs a lot. For one-arm / one-leg exercises done one side then the other, restSec is the ' +
+      'rest after BOTH sides: for arms, subtract roughly one side\'s working time (the resting arm ' +
+      'recovers while the other works), never below 60 s; for legs keep the full rest (fatigue ' +
+      'carries across sides).',
+    '- "perSide": true when the exercise is done one arm / one leg at a time (e.g. single-arm cable row, ' +
+      'one-arm dumbbell row, concentration curl, split squat): each set is left then right, "reps" is per ' +
+      'side, weightKg is the weight in one hand / on one side. false for everything else.',
     '',
     '"profile": the lifter\'s standing preferences as of now, so they are remembered next time: ' +
       'daysPerWeek (7 = every day), sessionMin (their MAXIMUM session minutes), goal, experience, ' +
-      'equipment, avoid (injuries/exercises to skip), notes (other standing preferences in one or two ' +
+      'equipment, avoid (injuries to work around), dislikes (exercise names from the library they said ' +
+      'they dislike or never want; return the COMPLETE list including ones already saved, and remove one ' +
+      'only if they say they are OK with it again), notes (other standing preferences in one or two ' +
       'short sentences, e.g. "2-3 hard sets per exercise; likes variety; runs a lot, keep legs light"). ' +
       'Include only what you know.',
     `Write every weight in prose ("progression", "rationale", "reply") in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}. ` +
@@ -249,7 +264,7 @@ function planPrompt(input) {
       'If they ask to change ONE of these saved workouts by name (e.g. "swap rows for pulldowns in ' +
         'Pull A", "make Legs shorter"), return "workoutEdit" with that workoutId and its COMPLETE new ' +
         'exercise list in order: apply only the requested change and copy every other exercise exactly ' +
-        '(same sets, reps, rest, weight). Set "plan" to null and describe the change in "reply". ' +
+        '(same sets, reps, rest, weight, perSide). Set "plan" to null and describe the change in "reply". ' +
         'Otherwise set "workoutEdit" to null.'
     );
   }
@@ -273,8 +288,9 @@ function progressPrompt(input) {
     '',
     'How to decide, per exercise:',
     '1. Start from how they did LAST TIME on that exercise (lastTime.sets, every set). Rep target is ' +
-      'targetReps. If they hit the target on every set with reps to spare, progress: one small load step ' +
-      `(${lb ? '5 lb barbell/smith/machine/cable, 2.5 lb per dumbbell' : '2.5 kg barbell/smith/machine/cable, 1 kg per dumbbell'}) ` +
+      'targetReps (per side when perSide is true; then lastTime.sets has one entry per side, side "L"/"R", and ' +
+      'the weaker side decides). If they hit the target on every set with reps to spare, progress: one small load step ' +
+      `(${input.rounding ? 'the next setting the equipment allows; see rounding' : lb ? '5 lb barbell/smith/machine/cable, 2.5 lb per dumbbell' : '2.5 kg barbell/smith/machine/cable, 1 kg per dumbbell'}) ` +
       'or +1-2 reps. If some sets fell short, hold. If reps fell off sharply or most sets missed, go down ' +
       'one step. No lastTime: use plannedWeightKg, else a conservative estimate from their other lifts.',
     '2. Adjust for TODAY. checkin.energy is 1 (drained) to 5 (great); checkin.soreness is per body area, ' +

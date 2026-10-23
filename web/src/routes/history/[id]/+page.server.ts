@@ -29,6 +29,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		weightKg: number;
 		rpe: number | null;
 		isWarmup: boolean;
+		restSec: number | null;
+		side: string | null;
 		e1rmKg: number;
 		fatigue: { decayPct: number; grinders: number; avgRepMs: number };
 		repTimeline: number[];
@@ -54,6 +56,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			weightKg: set.weightKg,
 			rpe: set.rpe,
 			isWarmup: set.isWarmup,
+			restSec: set.restSecActual,
+			side: set.side,
 			e1rmKg: +e1rm(set.weightKg, reps).toFixed(1),
 			fatigue: repFatigue(offsets),
 			repTimeline: offsets

@@ -38,6 +38,7 @@
 {#if bare}
 	<main class="safe-top mx-auto max-w-3xl px-4 py-6">{@render children()}</main>
 {:else}
+<div class="status-scrim" aria-hidden="true"></div>
 <div class="safe-bottom-nav min-h-screen md:pl-56">
 	<!-- desktop sidebar -->
 	<aside

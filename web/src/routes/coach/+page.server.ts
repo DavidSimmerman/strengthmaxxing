@@ -8,6 +8,7 @@ export const load: PageServerLoad = () => {
 	return {
 		messages: coach.getChat(),
 		profile: coach.getProfile(),
+		library: repo.listExercises().map((e) => e.name),
 		program: program ? { name: program.name, weeks: program.weeks, week: coach.programWeek(program) } : null,
 		nextWorkout: next ? (repo.getWorkout(next)?.name ?? null) : null
 	};

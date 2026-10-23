@@ -43,7 +43,8 @@ export const workoutExercises = sqliteTable('workout_exercises', {
 	targetSets: integer().notNull().default(3),
 	targetReps: integer().notNull().default(8),
 	targetWeightKg: real().notNull().default(0),
-	restSec: integer().notNull().default(120)
+	restSec: integer().notNull().default(120), // rest after the set (after BOTH sides when perSide)
+	perSide: integer({ mode: 'boolean' }).notNull().default(false) // one arm / leg at a time, left then right
 });
 
 /** A performed workout (one training session / log entry). */
@@ -60,6 +61,8 @@ export const sessions = sqliteTable('sessions', {
 	readinessScore: integer(), // 0-100, from the coach/healthmaxxing at session start
 	// exercises added mid-session that aren't in the template (ids), so they persist before a set
 	extraExerciseIds: text({ mode: 'json' }).$type<number[]>(),
+	// template exercises skipped for this session only (the template itself is unchanged)
+	removedExerciseIds: text({ mode: 'json' }).$type<number[]>(),
 	// start-of-workout check-in: energy 1-5, soreness per body area 0 fresh / 1 a bit / 2 very
 	checkin: text({ mode: 'json' }).$type<{ energy: number | null; soreness: Record<string, number> }>(),
 	// coach's per-exercise suggestions for this session (filled in the background)
@@ -90,7 +93,8 @@ export const sessionSets = sqliteTable('session_sets', {
 	weightKg: real().notNull().default(0),
 	rpe: real(), // rate of perceived exertion 1-10 (optional)
 	isWarmup: integer({ mode: 'boolean' }).notNull().default(false),
-	restSecActual: integer(), // measured rest before the NEXT set
+	side: text(), // 'L' | 'R' for one-side-at-a-time exercises (a pair shares setIndex); null = both
+	restSecActual: integer(), // rest before THIS set: its start − the previous set's finish (phone: estimated start)
 	startedAt: integer({ mode: 'timestamp' }),
 	completedAt: integer({ mode: 'timestamp' }).notNull().default(now)
 });

@@ -1,6 +1,7 @@
 import { error, redirect, fail } from '@sveltejs/kit';
 import * as repo from '$lib/server/repo';
 import { e1rm } from '$lib/metrics';
+import { estimateSetSec, SWITCH_SEC } from '$lib/rest';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -24,12 +25,14 @@ export const load: PageServerLoad = async ({ params }) => {
 		targetWeightKg: number;
 		restSec: number;
 		supersetGroup: number | null;
+		perSide: boolean;
 		orderIndex: number;
 	};
 
 	// planned = template slots, then exercises added mid-session, then anything logged that
 	// is in neither (e.g. a set synced from the watch) — so nothing logged is ever hidden.
-	const planned: Planned[] = (template?.exercises ?? []).map((we) => ({
+	const removed = new Set(session.removedExerciseIds ?? []);
+	const planned: Planned[] = (template?.exercises ?? []).filter((we) => !removed.has(we.exerciseId)).map((we) => ({
 		exerciseId: we.exerciseId,
 		name: we.exercise.name,
 		muscle: we.exercise.muscle,
@@ -39,6 +42,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		targetWeightKg: we.targetWeightKg,
 		restSec: we.restSec,
 		supersetGroup: we.supersetGroup,
+		perSide: we.perSide,
 		orderIndex: we.orderIndex
 	}));
 	const lib = new Map(repo.listExercises().map((e) => [e.id, e]));
@@ -55,6 +59,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			targetWeightKg: weightKg,
 			restSec: e.defaultRestSec,
 			supersetGroup,
+			perSide: session.sets.some((s) => s.exerciseId === exerciseId && s.side != null),
 			orderIndex: planned.length
 		});
 	};
@@ -84,6 +89,7 @@ export const load: PageServerLoad = async ({ params }) => {
 				weightKg: s.weightKg,
 				rpe: s.rpe,
 				isWarmup: s.isWarmup,
+				side: s.side,
 				volume: s.reps * s.weightKg
 			})),
 			lastTime: last.get(p.exerciseId) ?? null,
@@ -151,16 +157,26 @@ export const actions: Actions = {
 			.filter((s) => s.exerciseId === exerciseId && !s.isWarmup)
 			.reduce((m, s) => Math.max(m, e1rm(s.weightKg, s.reps)), 0);
 		const isWarmup = fd.get('isWarmup') === 'true';
-		repo.addSet(id, {
+		const base = {
 			exerciseId,
 			setIndex: Number(fd.get('setIndex') ?? 0),
 			supersetGroup: fd.get('supersetGroup') ? Number(fd.get('supersetGroup')) : null,
-			reps: f.reps,
 			weightKg: f.weightKg,
 			isWarmup
-		});
+		};
+		const repsR = Number(fd.get('repsR'));
+		if (fd.has('repsR')) {
+			if (!Number.isInteger(repsR) || repsR < 1) return fail(400, { error: 'Right-side reps must be at least 1' });
+			// Logged together after the right side: the left side finished one right-side set
+			// (plus a few seconds to switch) earlier.
+			const now = Date.now();
+			const ex = repo.listExercises().find((e) => e.id === exerciseId);
+			const rightSec = estimateSetSec(ex?.category ?? 'machine', repsR, repo.secPerRep(exerciseId));
+			repo.addSet(id, { ...base, side: 'L', reps: f.reps, completedAt: now - (rightSec + SWITCH_SEC) * 1000 });
+			repo.addSet(id, { ...base, side: 'R', reps: repsR, completedAt: now });
+		} else repo.addSet(id, { ...base, reps: f.reps });
 		// PR = beats every earlier set of this exercise, ever (needs some history to mean anything)
-		const now = e1rm(f.weightKg, f.reps);
+		const now = e1rm(f.weightKg, fd.has('repsR') ? Math.max(f.reps, repsR) : f.reps);
 		const pr = !isWarmup && before > 0 && now > Math.max(before, thisSession) ? now : null;
 		return { ok: true, loggedExercise: exerciseId, pr };
 	},
@@ -171,12 +187,18 @@ export const actions: Actions = {
 		if ('error' in f) return fail(400, { error: f.error });
 		const row = repo.updateSet(Number(params.id), Number(fd.get('setId')), f);
 		if (!row) return fail(404, { error: 'Set not found' });
+		if (fd.get('setIdR')) {
+			const repsR = Number(fd.get('repsR'));
+			if (!Number.isInteger(repsR) || repsR < 1) return fail(400, { error: 'Right-side reps must be at least 1' });
+			repo.updateSet(Number(params.id), Number(fd.get('setIdR')), { reps: repsR, weightKg: f.weightKg });
+		}
 		return { ok: true };
 	},
 
 	deleteSet: async ({ params, request }) => {
 		const fd = await request.formData();
 		repo.deleteSet(Number(params.id), Number(fd.get('setId')));
+		if (fd.get('setIdR')) repo.deleteSet(Number(params.id), Number(fd.get('setIdR')));
 		return { ok: true };
 	},
 
@@ -185,6 +207,15 @@ export const actions: Actions = {
 		const exerciseId = Number(fd.get('exerciseId'));
 		if (!exerciseId) return fail(400, { error: 'Pick an exercise' });
 		repo.addSessionExercise(Number(params.id), exerciseId);
+		return { ok: true };
+	},
+
+	removeExercise: async ({ params, request }) => {
+		const fd = await request.formData();
+		const exerciseId = Number(fd.get('exerciseId'));
+		if (!exerciseId) return fail(400, { error: 'Pick an exercise' });
+		if (!repo.removeSessionExercise(Number(params.id), exerciseId))
+			return fail(409, { error: 'This workout is already finished' });
 		return { ok: true };
 	},
 

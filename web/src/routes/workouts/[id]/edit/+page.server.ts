@@ -20,7 +20,8 @@ export const load: PageServerLoad = async ({ params }) => {
 				targetReps: e.targetReps,
 				targetWeightKg: e.targetWeightKg,
 				restSec: e.restSec,
-				supersetGroup: e.supersetGroup
+				supersetGroup: e.supersetGroup,
+				perSide: e.perSide
 			}))
 		},
 		library: repo.listExercises().map((e) => ({

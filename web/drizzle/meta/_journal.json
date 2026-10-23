@@ -29,6 +29,20 @@
       "when": 1792641588084,
       "tag": "0003_checkin_suggestions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792770406593,
+      "tag": "0004_session_removed_exercises",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792775206379,
+      "tag": "0005_per_side",
+      "breakpoints": true
     }
   ]
 }

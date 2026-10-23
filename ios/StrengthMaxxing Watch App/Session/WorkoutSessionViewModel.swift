@@ -15,10 +15,14 @@
 //     when "Record motion" is on.
 //   - Supersets: no rest between members; rest after the last member of each round.
 //   - End Workout at any time finishes with what's logged.
+//   - One-side-at-a-time exercises: the watch knows which wrist it's on. It counts the watch
+//     arm as usual; for the other arm it ignores motion (that wrist is still) and shows a
+//     timer with a Done button, reps defaulting to the watch arm's count. No rest between sides.
 //
 
 import Foundation
 import Combine
+import WatchKit
 
 @MainActor
 final class WorkoutSessionViewModel: ObservableObject {
@@ -61,16 +65,21 @@ final class WorkoutSessionViewModel: ObservableObject {
 
     let template: Workout
     let sessionClientId = UUID()
+    /// The arm wearing the watch, "L" or "R".
+    let watchSide: String
 
     private var liftingSince = Date()
     private var setEndedAt = Date()
     private var lastSetCompletedAt: Date?
     private var recordingTask: Task<SetRecording, Never>?
     private var weightsByExercise: [Int: Double] = [:]
+    private var lastLoggedReps = 0
 
     init(workout: Workout) {
         self.template = workout
-        self.slots = WorkoutPlanner.buildSlots(from: workout)
+        let side = WKInterfaceDevice.current().wristLocation == .right ? "R" : "L"
+        self.watchSide = side
+        self.slots = WorkoutPlanner.buildSlots(from: workout, watchSide: side)
         motion.onEvent = { [weak self] event in self?.handleMotion(event) }
     }
 
@@ -78,6 +87,11 @@ final class WorkoutSessionViewModel: ObservableObject {
 
     var currentSlot: WorkoutSlot? { slots.indices.contains(currentIndex) ? slots[currentIndex] : nil }
     var nextSlot: WorkoutSlot? { slots.indices.contains(currentIndex + 1) ? slots[currentIndex + 1] : nil }
+    /// This set is on the arm without the watch: no motion to count.
+    var isOffWrist: Bool { currentSlot?.side.map { $0 != watchSide } ?? false }
+    /// When the current set began (for the off-wrist timer).
+    var currentSetStartedAt: Date { liftingSince }
+    func sideName(_ side: String?) -> String { side == "L" ? "Left" : side == "R" ? "Right" : "" }
     var unit: WeightUnit { settings.units }
     var progressText: String { slots.isEmpty ? "" : "\(min(currentIndex + 1, slots.count))/\(slots.count)" }
     var totalVolumeKg: Double { logged.reduce(0) { $0 + Double($1.reps) * $1.weightKg } }
@@ -123,6 +137,8 @@ final class WorkoutSessionViewModel: ObservableObject {
 
     private func handleMotion(_ event: RepCounterEvent) {
         guard phase != .finishing && phase != .finished && phase != .notStarted else { return }
+        // The watch wrist is still while the other arm works: nothing it sees is a rep.
+        if phase == .lifting && isOffWrist { return }
         switch event {
         case .setStarted(let n, _):
             voice.enabled = settings.voiceCount
@@ -146,9 +162,16 @@ final class WorkoutSessionViewModel: ObservableObject {
     func finishCounting() {
         guard phase == .lifting else { return }
         setEndedAt = Date()
-        reviewReps = motion.repCount
         let motion = self.motion
-        recordingTask = Task { await motion.finishSet() }
+        if isOffWrist {
+            // Nothing to count or calibrate; default to what the watch arm just did.
+            reviewReps = lastLoggedReps > 0 ? lastLoggedReps : (currentSlot?.targetReps ?? 0)
+            Task { _ = await motion.finishSet() }
+            recordingTask = nil
+        } else {
+            reviewReps = motion.repCount
+            recordingTask = Task { await motion.finishSet() }
+        }
         phase = .setReview
     }
 
@@ -188,6 +211,7 @@ final class WorkoutSessionViewModel: ObservableObject {
             weightKg: currentWeightKg,
             rpe: rpe,
             isWarmup: isWarmup,
+            side: slot.side,
             restSecActual: restActual.map { max(0, $0) },
             startedAt: Int64(startedAt.timeIntervalSince1970 * 1000),
             completedAt: Int64(max(completedAt, startedAt).timeIntervalSince1970 * 1000),
@@ -200,6 +224,7 @@ final class WorkoutSessionViewModel: ObservableObject {
                                 reps: reps, weightKg: currentWeightKg))
         weightsByExercise[slot.exerciseId] = currentWeightKg
         lastSetCompletedAt = completedAt
+        lastLoggedReps = reps
 
         guard let rec, !rec.samples.isEmpty else { return }
         let corrected = reps != detected

@@ -80,7 +80,7 @@ async function answer(
 		request: text,
 		conversation,
 		history: coach.historySummary(),
-		library: repo.listExercises().map((e) => `${e.name} [${e.category}]`),
+		library: coach.coachLibrary(),
 		currentPlan: currentPlan ?? undefined,
 		workouts: coach.workoutsBrief()
 	};
@@ -93,6 +93,8 @@ async function answer(
 		feedback = plan ? coach.planProblems(plan, coach.getProfile()) : [];
 		const unknown = workoutEdit?.after.filter((x) => !x.exerciseId).map((x) => x.name) ?? [];
 		if (unknown.length) feedback.push(`Not in the exercise library (use only library names): ${unknown.join(', ')}.`);
+		const disliked = workoutEdit?.after.filter((x) => coach.isDisliked(x.name)).map((x) => x.name) ?? [];
+		if (disliked.length) feedback.push(`They dislike these exercises; replace them: ${disliked.join(', ')}.`);
 		if (feedback.length && attempt === 0) continue;
 		if (workoutEdit)
 			return {
@@ -131,6 +133,18 @@ function cleanProfile(p: Record<string, unknown>): coach.CoachProfile {
 	out.notes = str(p.notes);
 	out.daysPerWeek = int(p.daysPerWeek, 1, 7);
 	out.sessionMin = int(p.sessionMin, 15, 180);
+	if (Array.isArray(p.dislikes)) {
+		// keep only real library names, in the library's spelling
+		const lib = new Map(repo.listExercises().map((e) => [e.name.toLowerCase().replace(/[^a-z0-9]/g, ''), e.name]));
+		out.dislikes = [
+			...new Set(
+				p.dislikes
+					.filter((e): e is string => typeof e === 'string')
+					.map((e) => lib.get(e.toLowerCase().replace(/[^a-z0-9]/g, '')))
+					.filter((e): e is string => !!e)
+			)
+		];
+	}
 	if (Array.isArray(p.equipment)) out.equipment = p.equipment.filter((e): e is string => typeof e === 'string').slice(0, 20);
 	return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as coach.CoachProfile;
 }

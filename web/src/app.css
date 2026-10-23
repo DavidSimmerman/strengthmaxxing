@@ -37,6 +37,18 @@ input[type='number']::-webkit-outer-spin-button {
 .safe-bottom {
 	padding-bottom: env(safe-area-inset-bottom);
 }
+/* Opaque strip behind the iPhone status bar so content scrolling up doesn't show through it. */
+.status-scrim {
+	position: fixed;
+	inset: 0 0 auto 0;
+	height: env(safe-area-inset-top);
+	background: var(--color-ink);
+	z-index: 30;
+}
+/* Sticky elements stop below the status bar instead of under it. */
+.sticky-safe {
+	top: calc(0.5rem + env(safe-area-inset-top));
+}
 .safe-bottom-nav {
 	padding-bottom: calc(6rem + env(safe-area-inset-bottom));
 }

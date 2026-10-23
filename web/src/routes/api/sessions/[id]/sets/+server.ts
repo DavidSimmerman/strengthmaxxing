@@ -45,6 +45,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		supersetGroup: b.supersetGroup === null ? null : numOrUndef(b.supersetGroup, 'supersetGroup'),
 		rpe: b.rpe === null ? null : numOrUndef(b.rpe, 'rpe'),
 		isWarmup: boolOrUndef(b.isWarmup, 'isWarmup'),
+		side: b.side === 'L' || b.side === 'R' ? b.side : null,
 		restSecActual: b.restSecActual === null ? null : numOrUndef(b.restSecActual, 'restSecActual'),
 		startedAt: b.startedAt === null ? null : numOrUndef(b.startedAt, 'startedAt'),
 		completedAt: b.completedAt === null ? null : numOrUndef(b.completedAt, 'completedAt')

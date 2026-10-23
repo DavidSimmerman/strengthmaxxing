@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { ArrowRight, Check, Dumbbell, Minus, Plus } from '@lucide/svelte';
+	import { ArrowRight, Check, Dumbbell, Minus, Plus, X } from '@lucide/svelte';
 	import { tick } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { wt } from '$lib/units.svelte';
+	import { mmss } from '$lib/ui';
 	import type { PageData } from './$types';
 	import type { ChatMessage, CoachProfile } from '$lib/server/coach';
 
@@ -97,7 +98,7 @@
 
 	// ---- single-workout edit card ----
 	type EditEx = { name: string; sets: number; reps: number; restSec: number; weightKg: number | null };
-	const fmtEx = (x: EditEx) => `${x.sets}×${x.reps}${x.weightKg ? ` · ${wt(x.weightKg)}` : ''}`;
+	const fmtEx = (x: EditEx) => `${x.sets}×${x.reps}${x.weightKg ? ` · ${wt(x.weightKg)}` : ''} · rest ${mmss(x.restSec)}`;
 	const minutes = (xs: EditEx[]) => Math.round(5 + xs.reduce((m, x) => m + x.sets * (60 + x.restSec), 0) / 60);
 	function editRows(ed: { before: EditEx[]; after: EditEx[] }) {
 		const before = new Map(ed.before.map((x) => [x.name, x]));
@@ -155,8 +156,10 @@
 		sessionMin: 60,
 		experience: 'intermediate',
 		...data.profile,
+		dislikes: [...(data.profile.dislikes ?? [])],
 		equipmentText: (data.profile.equipment ?? []).join(', ')
 	});
+	let dislikePick = $state('');
 	let savingProfile = $state(false);
 	async function saveProfile(e: SubmitEvent) {
 		e.preventDefault();
@@ -179,7 +182,8 @@
 			data.profile.goal,
 			data.profile.daysPerWeek && `${data.profile.daysPerWeek}×${data.profile.sessionMin ?? 60} min`,
 			data.profile.experience,
-			data.profile.avoid
+			data.profile.avoid,
+			data.profile.dislikes?.length && `dislikes ${data.profile.dislikes.length} exercise${data.profile.dislikes.length > 1 ? 's' : ''}`
 		]
 			.filter(Boolean)
 			.join(' · ')
@@ -266,6 +270,32 @@
 					Injuries / things to avoid
 					<input bind:value={p.avoid} placeholder="e.g. left shoulder: no behind-the-neck pressing" class={field} />
 				</label>
+				<div class="flex flex-col gap-1 text-xs text-zinc-400 sm:col-span-2">
+					Exercises you don't like (the coach never programs these)
+					{#if p.dislikes?.length}
+						<div class="flex flex-wrap gap-1.5">
+							{#each p.dislikes as name (name)}
+								<button
+									type="button"
+									onclick={() => (p.dislikes = p.dislikes!.filter((d) => d !== name))}
+									class="flex items-center gap-1 rounded-full bg-panel2 px-2.5 py-1 text-xs text-zinc-200 hover:text-red-400"
+									aria-label="Remove {name}">{name}<X class="h-3 w-3" /></button
+								>
+							{/each}
+						</div>
+					{/if}
+					<select
+						bind:value={dislikePick}
+						onchange={() => {
+							if (dislikePick && !p.dislikes!.includes(dislikePick)) p.dislikes = [...p.dislikes!, dislikePick];
+							dislikePick = '';
+						}}
+						class={field}
+					>
+						<option value="">+ Add an exercise…</option>
+						{#each data.library.filter((n) => !p.dislikes!.includes(n)) as name (name)}<option value={name}>{name}</option>{/each}
+					</select>
+				</div>
 				<button disabled={savingProfile} class="rounded-xl bg-accent py-2.5 font-bold text-ink disabled:opacity-60 sm:col-span-2"
 					>{savingProfile ? 'Saving…' : 'Save profile'}</button
 				>
@@ -356,7 +386,7 @@
 												>{x.name}</span
 											>
 											<span class="shrink-0 tabular-nums text-zinc-500"
-												>{x.sets}×{x.reps}{#if x.weightKg} · <span class="text-zinc-200">{wt(x.weightKg)}</span>{/if}</span
+												>{x.sets}×{x.reps}{#if x.weightKg} · <span class="text-zinc-200">{wt(x.weightKg)}</span>{/if} · rest {mmss(x.restSec)}</span
 											>
 										</li>
 									{/each}

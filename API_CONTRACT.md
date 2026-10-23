@@ -34,7 +34,8 @@ API responses are ISO strings (Drizzle `Date`). Client-supplied timestamps (`sta
   {"name":"Push A","notes":"","exercises":[
     {"exerciseId":5,"orderIndex":0,"supersetGroup":null,"targetSets":3,"targetReps":8,"targetWeightKg":60,"restSec":150}]}
   ```
-  → created workout. (supersetGroup: shared int = superset.)
+  → created workout. (supersetGroup: shared int = superset. `perSide: true` = one arm / leg at a
+  time: each set is left then right, `targetReps` per side, `restSec` after both sides.)
 - `GET /api/workouts/:id` → workout | 404
 - `PATCH /api/workouts/:id` body: any of `{name,notes,archived,exercises}` (exercises = full replace)
 - `DELETE /api/workouts/:id` → soft-archive
@@ -49,7 +50,10 @@ API responses are ISO strings (Drizzle `Date`). Client-supplied timestamps (`sta
    "isWarmup":false,"restSecActual":null,"startedAt":1720000000000,"completedAt":1720000030000,
    "repEvents":[{"repIndex":0,"offsetMs":0},{"repIndex":1,"offsetMs":1800,"concentricMs":900}]}
   ```
-  → created set
+  → created set. Optional `"side":"L"|"R"` for one-side exercises (a pair shares `setIndex`).
+  `restSecActual` = rest before THIS set. If `startedAt` is missing the server estimates it
+  (reps × seconds per rep, learned from earlier rep events, + setup) and computes
+  `restSecActual` from the previous set's `completedAt`.
 - `POST /api/sessions/:id/finish` body `{notes?,bodyweightKg?}` → finalized session (computes
   `totalVolumeKg` + `estimatedKcal`); response also good to hand to iOS for HealthKit.
 - `DELETE /api/sessions/:id`
@@ -105,6 +109,10 @@ Native app talks to the web JSON API. Base URL + bearer token in app settings.
 - On finish: `POST /api/sessions/:id/finish`, then write an `HKWorkout` to HealthKit (Apple
   Fitness) using the `/healthkit` payload shape (or build locally from the session).
 - Supersets: exercises with the same `supersetGroup` are cycled without rest between them.
+- One-side exercises: the watch does its own wrist's side first (counted), then the other side
+  (not counted: timer + Done), no rest between sides.
+- iPhone app rest alarm: the page asks the shell (`restAlarm {endsAt}` / `restAlarmCancel`); iOS 26+
+  rings an AlarmKit alarm until dismissed, older iOS a burst of notifications.
 
 ---
 

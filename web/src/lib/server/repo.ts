@@ -3,7 +3,7 @@
  * Both the JSON API (routes/api) and the dashboard (+page.server actions) call these,
  * so business rules (rollups, export shape, fatigue math) live in exactly one spot.
  */
-import { and, desc, eq, gte, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lte, ne } from 'drizzle-orm';
 import { db } from '$lib/db';
 import {
 	exercises,
@@ -18,6 +18,7 @@ import {
 	motionTraces
 } from '$lib/db/schema';
 import { e1rm, tonnage, repFatigue, estimateKcal, readinessScore } from '$lib/metrics';
+import { estimateSetSec, MAX_REST_SEC } from '$lib/rest';
 
 // ---------- exercises ----------
 export const listExercises = () => db.select().from(exercises).orderBy(exercises.muscle, exercises.name).all();
@@ -76,7 +77,7 @@ export function exerciseHistory(exerciseId: number) {
 
 /** For each exercise: its working sets from the most recent other session ("last time"). */
 export function lastPerformance(exerciseIds: number[], excludeSessionId: number) {
-	const out = new Map<number, { date: Date; sets: { reps: number; weightKg: number }[] }>();
+	const out = new Map<number, { date: Date; sets: { reps: number; weightKg: number; side: string | null }[] }>();
 	for (const exerciseId of exerciseIds) {
 		const last = db
 			.select({ sessionId: sessionSets.sessionId, date: sessions.startedAt })
@@ -88,7 +89,7 @@ export function lastPerformance(exerciseIds: number[], excludeSessionId: number)
 			.get();
 		if (!last) continue;
 		const sets = db
-			.select({ reps: sessionSets.reps, weightKg: sessionSets.weightKg })
+			.select({ reps: sessionSets.reps, weightKg: sessionSets.weightKg, side: sessionSets.side })
 			.from(sessionSets)
 			.where(
 				and(
@@ -108,8 +109,33 @@ export function addSessionExercise(sessionId: number, exerciseId: number) {
 	const s = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
 	if (!s) return null;
 	const ids = s.extraExerciseIds ?? [];
-	if (!ids.includes(exerciseId))
-		db.update(sessions).set({ extraExerciseIds: [...ids, exerciseId] }).where(eq(sessions.id, sessionId)).run();
+	db.update(sessions)
+		.set({
+			extraExerciseIds: ids.includes(exerciseId) ? ids : [...ids, exerciseId],
+			removedExerciseIds: (s.removedExerciseIds ?? []).filter((x) => x !== exerciseId)
+		})
+		.where(eq(sessions.id, sessionId))
+		.run();
+	return true;
+}
+
+/** Drop an exercise from this session only: its sets here are deleted, the template is untouched. */
+export function removeSessionExercise(sessionId: number, exerciseId: number) {
+	const s = db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+	if (!s || s.endedAt) return null;
+	db.transaction((tx) => {
+		tx.delete(sessionSets)
+			.where(and(eq(sessionSets.sessionId, sessionId), eq(sessionSets.exerciseId, exerciseId)))
+			.run();
+		const removed = s.removedExerciseIds ?? [];
+		tx.update(sessions)
+			.set({
+				extraExerciseIds: (s.extraExerciseIds ?? []).filter((x) => x !== exerciseId),
+				removedExerciseIds: removed.includes(exerciseId) ? removed : [...removed, exerciseId]
+			})
+			.where(eq(sessions.id, sessionId))
+			.run();
+	});
 	return true;
 }
 
@@ -141,6 +167,7 @@ export type WorkoutExerciseInput = {
 	targetReps?: number;
 	targetWeightKg?: number;
 	restSec?: number;
+	perSide?: boolean;
 };
 
 export function createWorkout(input: {
@@ -190,7 +217,8 @@ function insertWorkoutExercises(tx: Tx, workoutId: number, list: WorkoutExercise
 				targetSets: e.targetSets ?? 3,
 				targetReps: e.targetReps ?? 8,
 				targetWeightKg: e.targetWeightKg ?? 0,
-				restSec: e.restSec ?? 120
+				restSec: e.restSec ?? 120,
+				perSide: e.perSide ?? false
 			}))
 		)
 		.run();
@@ -261,13 +289,66 @@ export type SetInput = {
 	weightKg: number;
 	rpe?: number | null;
 	isWarmup?: boolean;
+	side?: 'L' | 'R' | null;
 	restSecActual?: number | null;
 	startedAt?: number | null; // epoch ms
 	completedAt?: number | null; // epoch ms
 	repEvents?: { repIndex: number; offsetMs: number; concentricMs?: number | null }[];
 };
 
-export function addSet(sessionId: number, input: SetInput) {
+/**
+ * Measured seconds per rep for an exercise: median rep-to-rep time from the watch's rep
+ * events over its last 10 counted sets. null until the watch has timed some.
+ */
+export function secPerRep(exerciseId: number): number | null {
+	const rows = db
+		.select({ setId: repEvents.sessionSetId, offsetMs: repEvents.offsetMs })
+		.from(repEvents)
+		.innerJoin(sessionSets, eq(sessionSets.id, repEvents.sessionSetId))
+		.where(eq(sessionSets.exerciseId, exerciseId))
+		.orderBy(desc(repEvents.sessionSetId))
+		.limit(400)
+		.all();
+	const bySet = new Map<number, number[]>();
+	for (const r of rows) bySet.set(r.setId, [...(bySet.get(r.setId) ?? []), r.offsetMs]);
+	const per = [...bySet.values()]
+		.filter((o) => o.length >= 3)
+		.slice(0, 10)
+		.map((o) => Math.max(...o) / 1000 / (o.length - 1))
+		.filter((x) => x >= 1 && x <= 8)
+		.sort((a, b) => a - b);
+	return per.length ? per[Math.floor(per.length / 2)] : null;
+}
+
+/**
+ * Fill in timing a client didn't measure (the phone only knows when Log set was tapped):
+ * start = finish − estimated set length, rest = start − the previous set's finish.
+ */
+function withTiming(sessionId: number, input: SetInput): SetInput {
+	if (input.startedAt && input.restSecActual !== undefined) return input;
+	const completedAt = input.completedAt ?? Date.now();
+	let startedAt = input.startedAt ?? null;
+	if (!startedAt) {
+		const ex = db.select({ category: exercises.category }).from(exercises).where(eq(exercises.id, input.exerciseId)).get();
+		startedAt = completedAt - estimateSetSec(ex?.category ?? 'machine', input.reps, secPerRep(input.exerciseId)) * 1000;
+	}
+	let restSecActual = input.restSecActual;
+	if (restSecActual === undefined) {
+		const prev = db
+			.select({ completedAt: sessionSets.completedAt })
+			.from(sessionSets)
+			.where(and(eq(sessionSets.sessionId, sessionId), lte(sessionSets.completedAt, new Date(startedAt))))
+			.orderBy(desc(sessionSets.completedAt))
+			.limit(1)
+			.get();
+		const gap = prev ? (startedAt - prev.completedAt.getTime()) / 1000 : null;
+		restSecActual = gap != null && gap <= MAX_REST_SEC ? Math.max(0, Math.round(gap)) : null;
+	}
+	return { ...input, completedAt, startedAt, restSecActual };
+}
+
+export function addSet(sessionId: number, raw: SetInput) {
+	const input = withTiming(sessionId, raw);
 	const set = db.transaction((tx) => {
 		const set = tx
 			.insert(sessionSets)
@@ -281,6 +362,7 @@ export function addSet(sessionId: number, input: SetInput) {
 				weightKg: input.weightKg,
 				rpe: input.rpe ?? null,
 				isWarmup: input.isWarmup ?? false,
+				side: input.side ?? null,
 				restSecActual: input.restSecActual ?? null,
 				startedAt: input.startedAt ? new Date(input.startedAt) : null,
 				completedAt: input.completedAt ? new Date(input.completedAt) : new Date()

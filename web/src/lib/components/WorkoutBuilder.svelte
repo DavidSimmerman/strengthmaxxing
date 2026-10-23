@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
 	import { supersetLabel } from '$lib/ui';
-	import { toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
+	import { toDisplay, fromDisplay, units } from '$lib/units.svelte';
 
 	type LibExercise = { id: number; name: string; muscle: string; category: string; defaultRestSec: number };
 	type Slot = {
@@ -15,6 +15,7 @@
 		targetWeightKg: number;
 		restSec: number;
 		supersetGroup: number | null;
+		perSide?: boolean;
 	};
 	// editing copy: weight held in the user's unit, converted back to kg in the payload
 	type EditSlot = Omit<Slot, 'targetWeightKg'> & { weight: number; category: string };
@@ -61,7 +62,8 @@
 				weight: 0,
 				category: lib.category,
 				restSec: lib.defaultRestSec,
-				supersetGroup: null
+				supersetGroup: null,
+				perSide: false
 			}
 		];
 		picker = '';
@@ -90,7 +92,8 @@
 				targetSets: s.targetSets,
 				targetReps: s.targetReps,
 				targetWeightKg: fromDisplay(s.weight),
-				restSec: s.restSec
+				restSec: s.restSec,
+				perSide: !!s.perSide
 			}))
 		)
 	);
@@ -157,7 +160,7 @@
 					<Stepper
 						bind:value={slot.weight}
 						label="Weight"
-						step={weightStep(slot.category)}
+						category={slot.category}
 						min={0}
 						unit={units()}
 					/>
@@ -196,6 +199,10 @@
 							</button>
 						{/each}
 					</div>
+					<label class="ml-auto flex items-center gap-1.5 text-xs text-zinc-400">
+						<input type="checkbox" bind:checked={slot.perSide} class="accent-accent" />
+						One side at a time
+					</label>
 				</div>
 			</div>
 		{/each}

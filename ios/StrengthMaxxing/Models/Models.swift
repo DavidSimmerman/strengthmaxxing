@@ -44,6 +44,8 @@ struct WorkoutExercise: Codable, Identifiable, Hashable {
     let targetReps: Int?
     let targetWeightKg: Double?
     let restSec: Int?
+    /// One arm / leg at a time: each set is left then right (`restSec` follows both).
+    var perSide: Bool? = nil
     /// Joined exercise record (present on GET responses).
     let exercise: Exercise?
 }
@@ -139,6 +141,8 @@ struct CreateSetBody: Codable, Sendable {
     let weightKg: Double
     let rpe: Double?
     let isWarmup: Bool
+    /// "L" / "R" for one-side-at-a-time exercises; nil = both.
+    var side: String? = nil
     let restSecActual: Int?
     /// epoch ms
     let startedAt: Int64
@@ -149,7 +153,7 @@ struct CreateSetBody: Codable, Sendable {
     var clientId: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case exerciseId, setIndex, supersetGroup, reps, weightKg, rpe, isWarmup
+        case exerciseId, setIndex, supersetGroup, reps, weightKg, rpe, isWarmup, side
         case restSecActual, startedAt, completedAt, repEvents, clientId
     }
 
@@ -162,6 +166,7 @@ struct CreateSetBody: Codable, Sendable {
         try c.encode(weightKg, forKey: .weightKg)
         try c.encode(rpe, forKey: .rpe)                       // Optional → null
         try c.encode(isWarmup, forKey: .isWarmup)
+        try c.encodeIfPresent(side, forKey: .side)
         try c.encode(restSecActual, forKey: .restSecActual)   // Optional → null
         try c.encode(startedAt, forKey: .startedAt)
         try c.encode(completedAt, forKey: .completedAt)

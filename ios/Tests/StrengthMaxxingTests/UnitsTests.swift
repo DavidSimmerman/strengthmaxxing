@@ -30,7 +30,7 @@ final class UnitsTests: XCTestCase {
     func testStepSizes() {
         XCTAssertEqual(Units.step(category: "barbell", unit: .lb), 5)
         XCTAssertEqual(Units.step(category: "machine", unit: .lb), 5)
-        XCTAssertEqual(Units.step(category: "cable", unit: .lb), 5)
+        XCTAssertEqual(Units.step(category: "cable", unit: .lb), 2.5)
         XCTAssertEqual(Units.step(category: "dumbbell", unit: .lb), 2.5)
         XCTAssertEqual(Units.step(category: nil, unit: .lb), 5)
         XCTAssertEqual(Units.step(category: "barbell", unit: .kg), 2.5)
@@ -56,8 +56,11 @@ final class UnitsTests: XCTestCase {
         // Off-grid kg value (100 kg = 220.46 lb) snaps to the neighbouring grid points.
         XCTAssertEqual(Units.format(kg: Units.stepped(kg: 100, direction: 1, category: "barbell", unit: .lb), unit: .lb), "225 lb")
         XCTAssertEqual(Units.format(kg: Units.stepped(kg: 100, direction: -1, category: "barbell", unit: .lb), unit: .lb), "220 lb")
-        // Dumbbells step 2.5 lb.
+        // Dumbbells follow the SelectTech 552: 2.5 lb to 25, then 5 lb, then 52.5 at the top.
         XCTAssertEqual(Units.format(kg: Units.stepped(kg: Units.toKg(50, unit: .lb), direction: 1, category: "dumbbell", unit: .lb), unit: .lb), "52.5 lb")
+        XCTAssertEqual(Units.format(kg: Units.stepped(kg: Units.toKg(25, unit: .lb), direction: 1, category: "dumbbell", unit: .lb), unit: .lb), "30 lb")
+        XCTAssertEqual(Units.format(kg: Units.stepped(kg: Units.toKg(30, unit: .lb), direction: -1, category: "dumbbell", unit: .lb), unit: .lb), "25 lb")
+        XCTAssertEqual(Units.format(kg: Units.stepped(kg: Units.toKg(52.5, unit: .lb), direction: 1, category: "dumbbell", unit: .lb), unit: .lb), "52.5 lb")
         // Never negative.
         XCTAssertEqual(Units.stepped(kg: 0, direction: -1, category: "barbell", unit: .lb), 0)
         // kg mode.

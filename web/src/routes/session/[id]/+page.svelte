@@ -5,7 +5,8 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import { isApp, native } from '$lib/native';
 	import { Zap } from '@lucide/svelte';
-	import ExerciseLogger from '$lib/components/ExerciseLogger.svelte';
+	import ExerciseLogger, { type DropNotice } from '$lib/components/ExerciseLogger.svelte';
+	import { ArrowDown } from '@lucide/svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
 	import { dur, supersetLabel } from '$lib/ui';
 	import { vol, wt, units } from '$lib/units.svelte';
@@ -40,6 +41,13 @@
 			prFlash = `New PR! Estimated 1-rep max ${wt(pr)}`;
 			setTimeout(() => (prFlash = null), 5000);
 		}
+	}
+
+	// Lowered next-set weights whose exercise is scrolled off screen: shown under the rest timer.
+	let notices = $state<Record<number, DropNotice>>({});
+	function onNotice(exerciseId: number, n: DropNotice | null) {
+		if (n) notices[exerciseId] = n;
+		else if (notices[exerciseId]) delete notices[exerciseId];
 	}
 
 	let picker = $state('');
@@ -141,8 +149,19 @@
 {/if}
 
 <!-- sticky rest timer -->
-<div class="sticky top-2 z-10 mb-4">
+<div class="sticky-safe sticky z-10 mb-4 flex flex-col gap-2">
 	<RestTimer {restSec} runKey={restKey} />
+	{#each Object.values(notices) as n (n.exerciseId)}
+		<button
+			type="button"
+			onclick={() => document.getElementById(`ex-${n.exerciseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+			class="flex items-center gap-2 rounded-xl bg-accent px-3 py-2.5 text-left font-black text-ink shadow-lg"
+		>
+			<ArrowDown class="h-5 w-5 shrink-0" />
+			<span class="min-w-0 flex-1 truncate">{n.name}: next set {n.to} {n.unit}</span>
+			<span class="shrink-0 text-sm font-semibold">({n.to - n.from > 0 ? '+' : '−'}{Math.abs(Math.round((n.to - n.from) * 10) / 10)})</span>
+		</button>
+	{/each}
 </div>
 
 <!-- exercises -->
@@ -160,13 +179,13 @@
 				</div>
 				<div class="flex flex-col gap-2">
 					{#each grp.items as ex (ex.exerciseId)}
-						<ExerciseLogger exercise={ex} {onLogged} suggesting={data.suggestions?.status === 'pending'} />
+						<div id="ex-{ex.exerciseId}"><ExerciseLogger exercise={ex} {onLogged} {onNotice} suggesting={data.suggestions?.status === 'pending'} /></div>
 					{/each}
 				</div>
 			</div>
 		{:else}
 			{#each grp.items as ex (ex.exerciseId)}
-				<ExerciseLogger exercise={ex} {onLogged} suggesting={data.suggestions?.status === 'pending'} />
+				<div id="ex-{ex.exerciseId}"><ExerciseLogger exercise={ex} {onLogged} {onNotice} suggesting={data.suggestions?.status === 'pending'} /></div>
 			{/each}
 		{/if}
 	{/each}

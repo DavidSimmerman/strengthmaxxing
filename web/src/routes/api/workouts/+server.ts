@@ -19,6 +19,7 @@ type WorkoutExerciseBody = {
 	targetReps?: number;
 	targetWeightKg?: number;
 	restSec?: number;
+	perSide?: boolean;
 };
 
 // POST /api/workouts → created workout
@@ -49,7 +50,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			targetSets: numOrUndef(e.targetSets, 'targetSets'),
 			targetReps: numOrUndef(e.targetReps, 'targetReps'),
 			targetWeightKg: numOrUndef(e.targetWeightKg, 'targetWeightKg'),
-			restSec: numOrUndef(e.restSec, 'restSec')
+			restSec: numOrUndef(e.restSec, 'restSec'),
+			perSide: e.perSide === undefined ? undefined : e.perSide === true
 		});
 	}
 

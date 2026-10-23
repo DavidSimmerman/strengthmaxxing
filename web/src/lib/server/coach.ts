@@ -10,6 +10,7 @@ import { sessions } from '$lib/db/schema';
 import { e1rm } from '$lib/metrics';
 import * as repo from './repo';
 import { isoDay } from '$lib/ui';
+import { EQUIPMENT_ROUNDING } from '$lib/equipment';
 import { estimateSoreness, muscleArea } from './soreness';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -23,6 +24,7 @@ export type CoachProfile = {
 	experience?: string;
 	equipment?: string[];
 	avoid?: string; // injuries / exercises to avoid, free text
+	dislikes?: string[]; // exercise names the coach must never program
 	notes?: string; // anything else, free text
 };
 
@@ -43,6 +45,7 @@ export type PlanExercise = {
 	reps: number;
 	restSec: number;
 	weightKg: number | null;
+	perSide?: boolean; // one arm / leg at a time
 	notes?: string;
 };
 export type CoachPlan = {
@@ -54,8 +57,24 @@ export type CoachPlan = {
 };
 
 /** Our own time estimate for a day: ~1 min per set + its rest, + 5 min warm-up/changeovers. */
-export function dayMinutes(exercises: { sets: number; restSec: number }[]) {
-	return Math.round(5 + exercises.reduce((m, x) => m + x.sets * (60 + x.restSec), 0) / 60);
+export function dayMinutes(exercises: { sets: number; restSec: number; perSide?: boolean }[]) {
+	return Math.round(5 + exercises.reduce((m, x) => m + x.sets * ((x.perSide ? 120 : 60) + x.restSec), 0) / 60);
+}
+
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Is this exercise on the lifter's dislike list? */
+export function isDisliked(name: string, profile: CoachProfile = getProfile()) {
+	return (profile.dislikes ?? []).some((d) => normName(d) === normName(name));
+}
+
+/** The exercise library as the coach sees it ("Name [equipment]"), minus disliked exercises. */
+export function coachLibrary() {
+	const profile = getProfile();
+	return repo
+		.listExercises()
+		.filter((e) => !isDisliked(e.name, profile))
+		.map((e) => `${e.name} [${e.category}]`);
 }
 
 /** Objective problems with a plan that the model is asked to fix (one retry). */
@@ -69,6 +88,8 @@ export function planProblems(plan: CoachPlan, profile: CoachProfile): string[] {
 	}
 	const unknown = plan.days.flatMap((d) => d.exercises.filter((x) => !x.exerciseId).map((x) => x.name));
 	if (unknown.length) out.push(`Not in the exercise library (use only library names): ${unknown.join(', ')}.`);
+	const disliked = plan.days.flatMap((d) => d.exercises.filter((x) => isDisliked(x.name, profile)).map((x) => x.name));
+	if (disliked.length) out.push(`They dislike these exercises; replace them: ${[...new Set(disliked)].join(', ')}.`);
 	return out;
 }
 
@@ -142,6 +163,7 @@ export function resolvePlan(raw: unknown): CoachPlan | null {
 				reps: Math.max(1, Math.round(Number(x.reps) || 8)),
 				restSec: Math.max(15, Math.round(Number(x.restSec) || 90)),
 				weightKg: x.weightKg == null || !Number.isFinite(Number(x.weightKg)) ? null : Number(x.weightKg),
+				perSide: x.perSide === true,
 				notes: x.notes ? String(x.notes) : undefined
 			}))
 		})).map((d) => ({ ...d, estMinutes: dayMinutes(d.exercises) }))
@@ -163,7 +185,8 @@ export function saveProgram(plan: CoachPlan) {
 					targetSets: x.sets,
 					targetReps: x.reps,
 					targetWeightKg: x.weightKg ?? 0,
-					restSec: x.restSec
+					restSec: x.restSec,
+					perSide: x.perSide ?? false
 				}))
 		}).id
 	);
@@ -203,7 +226,8 @@ export function lastTopSet(exerciseId: number) {
  */
 export function callAgent(path: '/plan' | '/progress', body: unknown, _fetchFn?: typeof fetch) {
 	const url = new URL(path, AGENT_URL);
-	const payload = JSON.stringify(body);
+	// every request carries how weights round on this equipment
+	const payload = JSON.stringify({ rounding: EQUIPMENT_ROUNDING, ...(body as object) });
 	const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
 	return new Promise<Record<string, unknown>>((resolve, reject) => {
 		const req = send(
@@ -260,6 +284,7 @@ export async function progressFor(
 			equipment: we.exercise.category,
 			targetSets: we.targetSets,
 			targetReps: we.targetReps,
+			perSide: we.perSide,
 			plannedWeightKg: we.targetWeightKg || null,
 			lastTime: lt
 				? { daysAgo: Math.round((now - new Date(lt.date).getTime()) / 864e5), sets: lt.sets }
@@ -371,7 +396,15 @@ export type ChatMessage = {
 	editSaved?: boolean;
 };
 
-type EditExercise = { name: string; exerciseId: number | null; sets: number; reps: number; restSec: number; weightKg: number | null };
+type EditExercise = {
+	name: string;
+	exerciseId: number | null;
+	sets: number;
+	reps: number;
+	restSec: number;
+	weightKg: number | null;
+	perSide?: boolean;
+};
 export type WorkoutEdit = { workoutId: number; workoutName: string; before: EditExercise[]; after: EditExercise[] };
 
 /** Saved workouts as the coach sees them (for "change X in Pull A"). */
@@ -384,7 +417,8 @@ export function workoutsBrief() {
 			sets: we.targetSets,
 			reps: we.targetReps,
 			restSec: we.restSec,
-			weightKg: we.targetWeightKg || null
+			weightKg: we.targetWeightKg || null,
+			perSide: we.perSide
 		}))
 	}));
 }
@@ -407,7 +441,8 @@ export function resolveWorkoutEdit(raw: unknown): WorkoutEdit | null {
 			sets: we.targetSets,
 			reps: we.targetReps,
 			restSec: we.restSec,
-			weightKg: we.targetWeightKg || null
+			weightKg: we.targetWeightKg || null,
+			perSide: we.perSide
 		})),
 		after: mapped.days[0].exercises.map(({ notes: _n, ...x }) => x)
 	};
@@ -424,7 +459,8 @@ export function applyWorkoutEdit(edit: WorkoutEdit) {
 				targetSets: x.sets,
 				targetReps: x.reps,
 				targetWeightKg: x.weightKg ?? 0,
-				restSec: x.restSec
+				restSec: x.restSec,
+				perSide: x.perSide ?? false
 			}))
 	});
 	const p = getActiveProgram();

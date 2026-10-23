@@ -10,6 +10,7 @@ type WorkoutExerciseBody = {
 	targetReps?: number;
 	targetWeightKg?: number;
 	restSec?: number;
+	perSide?: boolean;
 };
 
 function parseId(param: string): number {
@@ -76,7 +77,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 				targetSets: numOrUndef(e.targetSets, 'targetSets'),
 				targetReps: numOrUndef(e.targetReps, 'targetReps'),
 				targetWeightKg: numOrUndef(e.targetWeightKg, 'targetWeightKg'),
-				restSec: numOrUndef(e.restSec, 'restSec')
+				restSec: numOrUndef(e.restSec, 'restSec'),
+				perSide: e.perSide === undefined ? undefined : e.perSide === true
 			});
 		}
 		patch.exercises = exercises;

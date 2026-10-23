@@ -16,9 +16,13 @@
 //         (epoch ms; heart rate Health recorded in that window, e.g. by the watch)
 //    saveWorkout { start, end, kcal?, name?, sessionId?, volumeKg?, replace? } → { saved: true, replaced }
 //         replace: first delete this app's earlier workout for the same sessionId
+//    restAlarm { endsAt }                    → { scheduled: Bool }  (epoch ms; rings until dismissed)
+//    restAlarmCancel                         → { cancelled: true }
+//    haptic { kind: "warning" | "success" }  → { ok: true }
 //
 
 import Foundation
+import UIKit
 import WebKit
 import WatchConnectivity
 
@@ -90,6 +94,19 @@ final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
             } catch {
                 return (["error": error.localizedDescription], nil)
             }
+
+        case "restAlarm":
+            guard let endsAt = date("endsAt") else { return (["error": "endsAt required"], nil) }
+            return (["scheduled": await PhoneRestAlarm.shared.schedule(endsAt: endsAt)], nil)
+
+        case "haptic":
+            let gen = UINotificationFeedbackGenerator()
+            gen.notificationOccurred(body["kind"] as? String == "success" ? .success : .warning)
+            return (["ok": true], nil)
+
+        case "restAlarmCancel":
+            await PhoneRestAlarm.shared.cancel()
+            return (["cancelled": true], nil)
 
         default:
             return (["error": "unknown action \(action)"], nil)

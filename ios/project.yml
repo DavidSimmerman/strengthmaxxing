@@ -45,6 +45,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSHealthShareUsageDescription: StrengthMaxxing reads your heart rate, weight, height, age and sex to calculate the calories you burn lifting.
         NSHealthUpdateUsageDescription: StrengthMaxxing saves your strength workouts to Apple Health so they appear in Fitness and close your rings.
+        NSAlarmKitUsageDescription: StrengthMaxxing rings an alarm when your rest between sets is over.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     entitlements:

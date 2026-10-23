@@ -90,29 +90,63 @@ private struct LiftingView: View {
                 Text(viewModel.weightText(viewModel.currentWeightKg))
                     .font(.caption).foregroundStyle(.secondary)
 
-                Text(motion.isSetStarted ? "\(motion.repCount)" : "–")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .contentTransition(.numericText(value: Double(motion.repCount)))
-                    .monospacedDigit()
-                Text(motion.isSetStarted ? "reps" : "counting starts after 2 reps")
-                    .font(.caption2).foregroundStyle(.secondary)
+                if viewModel.isOffWrist {
+                    OffWristView(viewModel: viewModel)
+                } else {
+                    if let side = viewModel.currentSlot?.side {
+                        Text("\(viewModel.sideName(side)) arm").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(motion.isSetStarted ? "\(motion.repCount)" : "–")
+                        .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .contentTransition(.numericText(value: Double(motion.repCount)))
+                        .monospacedDigit()
+                    Text(motion.isSetStarted ? "reps" : "counting starts after 2 reps")
+                        .font(.caption2).foregroundStyle(.secondary)
 
-                EffortMeter(value: motion.effort)
-                    .frame(height: 6)
-                    .padding(.horizontal, 12)
+                    EffortMeter(value: motion.effort)
+                        .frame(height: 6)
+                        .padding(.horizontal, 12)
 
-                Button {
-                    viewModel.finishCounting()
-                } label: {
-                    Label("Done", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    Button {
+                        viewModel.finishCounting()
+                    } label: {
+                        Label("Done", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
 
                 Button("Skip set") { viewModel.skipSlot() }
                     .font(.caption2).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 6)
+        }
+    }
+}
+
+/// The arm without the watch: nothing to count, so a timer and a Done button.
+private struct OffWristView: View {
+    @ObservedObject var viewModel: WorkoutSessionViewModel
+
+    var body: some View {
+        let side = viewModel.sideName(viewModel.currentSlot?.side)
+        VStack(spacing: 4) {
+            Label("No watch on this arm", systemImage: "hand.raised")
+                .font(.caption2).foregroundStyle(.orange)
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                let sec = max(0, Int(ctx.date.timeIntervalSince(viewModel.currentSetStartedAt)))
+                Text(String(format: "%d:%02d", sec / 60, sec % 60))
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
+            Text("\(side) arm").font(.caption2).foregroundStyle(.secondary)
+            Button {
+                viewModel.finishCounting()
+            } label: {
+                Label("\(side) done", systemImage: "checkmark").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
         }
     }
 }
