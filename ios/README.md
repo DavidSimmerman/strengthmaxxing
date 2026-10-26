@@ -7,12 +7,13 @@ alarm, and works with no network.
 ## Build & run (Mac, Xcode 26)
 
 ```bash
-brew install xcodegen
-cd ios && xcodegen && open StrengthMaxxing.xcodeproj
+open ios/StrengthMaxxing.xcodeproj
 ```
 
-1. `DEVELOPMENT_TEAM` is set in `project.yml` (same team as Mile A Day). Re-run `xcodegen`
-   after pulling changes that add or remove files. Don't edit the generated project.
+1. The project is committed and uses Xcode synchronized folders, so new Swift files appear
+   on their own. Only after editing `project.yml` (targets, plist keys, team) run
+   `brew upgrade xcodegen && cd ios && xcodegen` (XcodeGen 2.43+) and commit the result.
+   `DEVELOPMENT_TEAM` is set there (same team as Mile A Day).
 2. Run the **StrengthMaxxing** scheme on your iPhone. Run **StrengthMaxxingWatch** on the
    watch (needs Developer Mode on the watch: Settings > Privacy & Security).
 3. In the iPhone app, sign in with the dashboard password, then Settings > **Connect Apple

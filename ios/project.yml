@@ -1,10 +1,11 @@
-# XcodeGen spec — generates StrengthMaxxing.xcodeproj (gitignored, never edit it by hand).
+# XcodeGen spec for StrengthMaxxing.xcodeproj. The generated project IS committed, and its
+# source folders are Xcode "synchronized folders": new or deleted Swift files show up in Xcode
+# on their own, so you only re-run XcodeGen (2.43+) after editing THIS file:
 #
-#   brew install xcodegen && cd ios && xcodegen && open StrengthMaxxing.xcodeproj
+#   brew upgrade xcodegen && cd ios && xcodegen
 #
-# Before the first device build: set DEVELOPMENT_TEAM below (Xcode ▸ Settings ▸ Accounts
-# shows your team ID), and change APP_BUNDLE_ID if you want a different prefix. Re-run
-# `xcodegen` after editing this file — it overwrites anything changed in Xcode's UI.
+# Info.plists and entitlements live in Config/ (outside the synced folders, which would
+# otherwise try to bundle them as resources). XcodeGen writes them from the properties below.
 
 name: StrengthMaxxing
 
@@ -34,11 +35,13 @@ targets:
     platform: iOS
     sources:
       - path: StrengthMaxxing            # shared: Core (pure), Models, Networking, Sync, Settings, Health
+        type: syncedFolder
       - path: "StrengthMaxxing iOS"
+        type: syncedFolder
     dependencies:
       - target: StrengthMaxxingWatch     # single-target watch app → "Embed Watch Content"
     info:
-      path: "StrengthMaxxing iOS/Info.plist"
+      path: Config/iOS-Info.plist
       properties:
         CFBundleDisplayName: StrengthMaxxing
         UILaunchScreen: {}
@@ -49,7 +52,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     entitlements:
-      path: "StrengthMaxxing iOS/StrengthMaxxing.entitlements"
+      path: Config/iOS.entitlements
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: []
@@ -65,9 +68,11 @@ targets:
     platform: watchOS
     sources:
       - path: StrengthMaxxing
+        type: syncedFolder
       - path: "StrengthMaxxing Watch App"
+        type: syncedFolder
     info:
-      path: "StrengthMaxxing Watch App/Info.plist"
+      path: Config/Watch-Info.plist
       properties:
         CFBundleDisplayName: StrengthMaxxing
         WKApplication: true
@@ -79,7 +84,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     entitlements:
-      path: "StrengthMaxxing Watch App/StrengthMaxxingWatch.entitlements"
+      path: Config/Watch.entitlements
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: []
@@ -95,9 +100,10 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: StrengthMaxxing/Core
-      - path: StrengthMaxxing/Models
+      - path: StrengthMaxxing            # whole shared folder (one synced root per folder)
+        type: syncedFolder
       - path: Tests/StrengthMaxxingTests
+        type: syncedFolder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).coretests

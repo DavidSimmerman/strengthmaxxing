@@ -1,0 +1,558 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		8608410CAC329C22AE132D70 /* StrengthMaxxingWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 3022A738A7804776F80846E3 /* StrengthMaxxingWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		84326CDE31102D779045A14C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9C68FD0C0172B64C35944A2F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9F808F0705D8CAEE1A1B2C10;
+			remoteInfo = StrengthMaxxingWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		988C6F0A144727E6A68F80B9 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				8608410CAC329C22AE132D70 /* StrengthMaxxingWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		163D241858E815787A5CE7FE /* StrengthMaxxingCoreTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = StrengthMaxxingCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3022A738A7804776F80846E3 /* StrengthMaxxingWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StrengthMaxxingWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5742CF7669A8C04300C67DD3 /* StrengthMaxxing.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = StrengthMaxxing.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		81EEC4000092BBB4589ABCA6 /* StrengthMaxxing iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "StrengthMaxxing iOS";
+			sourceTree = "<group>";
+		};
+		C4708A74566C08755BD53E4E /* StrengthMaxxing */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = StrengthMaxxing;
+			sourceTree = "<group>";
+		};
+		E5ACDD8964DE387F2995BAE6 /* StrengthMaxxingTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			name = StrengthMaxxingTests;
+			path = StrengthMaxxingTests;
+			sourceTree = "<group>";
+		};
+		F96D343222CAD8990B209EE6 /* StrengthMaxxing Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = "StrengthMaxxing Watch App";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXGroup section */
+		4F04164C555ECC5E9E40AC5D = {
+			isa = PBXGroup;
+			children = (
+				C4708A74566C08755BD53E4E /* StrengthMaxxing */,
+				81EEC4000092BBB4589ABCA6 /* StrengthMaxxing iOS */,
+				F96D343222CAD8990B209EE6 /* StrengthMaxxing Watch App */,
+				89B16C64C7B10BC24A7CF37A /* Tests */,
+				BA373187C9E2FA55DCF3C4E1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		89B16C64C7B10BC24A7CF37A /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				E5ACDD8964DE387F2995BAE6 /* StrengthMaxxingTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		BA373187C9E2FA55DCF3C4E1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5742CF7669A8C04300C67DD3 /* StrengthMaxxing.app */,
+				163D241858E815787A5CE7FE /* StrengthMaxxingCoreTests.xctest */,
+				3022A738A7804776F80846E3 /* StrengthMaxxingWatch.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		005E4F3B645C688A598B88A0 /* StrengthMaxxing */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B37D82D9D5FA04012A86F2D /* Build configuration list for PBXNativeTarget "StrengthMaxxing" */;
+			buildPhases = (
+				23E17324FDBF6D3FE306D27C /* Sources */,
+				4957FF84567C7978DBD4D968 /* Resources */,
+				988C6F0A144727E6A68F80B9 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D0FCBAD379915F59C4D9B6D6 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C4708A74566C08755BD53E4E /* StrengthMaxxing */,
+				81EEC4000092BBB4589ABCA6 /* StrengthMaxxing iOS */,
+			);
+			name = StrengthMaxxing;
+			packageProductDependencies = (
+			);
+			productName = StrengthMaxxing;
+			productReference = 5742CF7669A8C04300C67DD3 /* StrengthMaxxing.app */;
+			productType = "com.apple.product-type.application";
+		};
+		12604CC5A17D670E45FC8674 /* StrengthMaxxingCoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7930E1C23A83215CC964042B /* Build configuration list for PBXNativeTarget "StrengthMaxxingCoreTests" */;
+			buildPhases = (
+				D78A1C1BB13C7B63C84D9D63 /* Sources */,
+				C8579C9206E4E0B917EA6F41 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C4708A74566C08755BD53E4E /* StrengthMaxxing */,
+				E5ACDD8964DE387F2995BAE6 /* StrengthMaxxingTests */,
+			);
+			name = StrengthMaxxingCoreTests;
+			packageProductDependencies = (
+			);
+			productName = StrengthMaxxingCoreTests;
+			productReference = 163D241858E815787A5CE7FE /* StrengthMaxxingCoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		9F808F0705D8CAEE1A1B2C10 /* StrengthMaxxingWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0C914DDCE769EBF25800F300 /* Build configuration list for PBXNativeTarget "StrengthMaxxingWatch" */;
+			buildPhases = (
+				C3E4C8777BC7E1069FFF72B7 /* Sources */,
+				490B8938FE9715498039565F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C4708A74566C08755BD53E4E /* StrengthMaxxing */,
+				F96D343222CAD8990B209EE6 /* StrengthMaxxing Watch App */,
+			);
+			name = StrengthMaxxingWatch;
+			packageProductDependencies = (
+			);
+			productName = StrengthMaxxingWatch;
+			productReference = 3022A738A7804776F80846E3 /* StrengthMaxxingWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9C68FD0C0172B64C35944A2F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					005E4F3B645C688A598B88A0 = {
+						DevelopmentTeam = NS237SS5KD;
+						ProvisioningStyle = Automatic;
+					};
+					12604CC5A17D670E45FC8674 = {
+						DevelopmentTeam = NS237SS5KD;
+						ProvisioningStyle = Automatic;
+					};
+					9F808F0705D8CAEE1A1B2C10 = {
+						DevelopmentTeam = NS237SS5KD;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 774D2F469F50B9BA3B0BE311 /* Build configuration list for PBXProject "StrengthMaxxing" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 4F04164C555ECC5E9E40AC5D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = BA373187C9E2FA55DCF3C4E1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				005E4F3B645C688A598B88A0 /* StrengthMaxxing */,
+				9F808F0705D8CAEE1A1B2C10 /* StrengthMaxxingWatch */,
+				12604CC5A17D670E45FC8674 /* StrengthMaxxingCoreTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		490B8938FE9715498039565F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4957FF84567C7978DBD4D968 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C8579C9206E4E0B917EA6F41 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		23E17324FDBF6D3FE306D27C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C3E4C8777BC7E1069FFF72B7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D78A1C1BB13C7B63C84D9D63 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D0FCBAD379915F59C4D9B6D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9F808F0705D8CAEE1A1B2C10 /* StrengthMaxxingWatch */;
+			targetProxy = 84326CDE31102D779045A14C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		12D27D161180B56DB50E53A4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID).coretests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		25CF97DC78946A47538518B1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Config/iOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID)";
+				PRODUCT_NAME = StrengthMaxxing;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		34A5B5BEAC5ECC9121767145 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				APP_BUNDLE_ID = tech.simmerman.strengthmaxxing;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = NS237SS5KD;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		44CB9716300878B4E8202D0C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID).coretests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E54AD37629171FA7A6A64F0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				APP_BUNDLE_ID = tech.simmerman.strengthmaxxing;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = NS237SS5KD;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		A0A6D29EB4FA853A0936D205 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/Watch.entitlements;
+				INFOPLIST_FILE = "Config/Watch-Info.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = StrengthMaxxingWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
+		D79D91556A7F6EEBB862051C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = "Config/iOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID)";
+				PRODUCT_NAME = StrengthMaxxing;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E41461FEA0FCD4BB014345F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/Watch.entitlements;
+				INFOPLIST_FILE = "Config/Watch-Info.plist";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_ID).watchkitapp";
+				PRODUCT_NAME = StrengthMaxxingWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0C914DDCE769EBF25800F300 /* Build configuration list for PBXNativeTarget "StrengthMaxxingWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A0A6D29EB4FA853A0936D205 /* Debug */,
+				E41461FEA0FCD4BB014345F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1B37D82D9D5FA04012A86F2D /* Build configuration list for PBXNativeTarget "StrengthMaxxing" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D79D91556A7F6EEBB862051C /* Debug */,
+				25CF97DC78946A47538518B1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		774D2F469F50B9BA3B0BE311 /* Build configuration list for PBXProject "StrengthMaxxing" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E54AD37629171FA7A6A64F0 /* Debug */,
+				34A5B5BEAC5ECC9121767145 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7930E1C23A83215CC964042B /* Build configuration list for PBXNativeTarget "StrengthMaxxingCoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				44CB9716300878B4E8202D0C /* Debug */,
+				12D27D161180B56DB50E53A4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9C68FD0C0172B64C35944A2F /* Project object */;
+}

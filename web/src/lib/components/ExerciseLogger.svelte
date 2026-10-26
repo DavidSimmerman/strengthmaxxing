@@ -179,7 +179,6 @@
 			? exercise.lastTime.sets.map((s) => `${s.side ?? ''}${s.reps}×${toDisplay(s.weightKg)}`).join(', ')
 			: ''
 	);
-	const chips = $derived(Array.from({ length: 5 }, (_, i) => targetReps - 2 + i).filter((n) => n >= 1));
 </script>
 
 <div bind:this={root}>
@@ -409,21 +408,6 @@
 				was={drop?.from ?? null}
 			/>
 		</div>
-		<!-- one tap for the reps you actually did, around the target -->
-		<div class="mt-2 flex items-center gap-1.5">
-			<span class="w-12 shrink-0 text-[10px] font-semibold uppercase leading-tight tracking-wider text-zinc-500">Reps done</span>
-			{#each chips as n (n)}
-				<button
-					type="button"
-					onclick={() => (reps = repsR = n)}
-					class="flex-1 rounded-lg border py-1.5 text-sm font-bold tabular-nums transition
-						{reps === n && (!exercise.perSide || repsR === n)
-						? 'border-accent2 bg-accent2 text-ink'
-						: 'border-line bg-ink text-zinc-300'}">{n}</button
-				>
-			{/each}
-		</div>
-
 		<div class="mt-3 flex items-center gap-2">
 			<label
 				class="flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-zinc-400"
