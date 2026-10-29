@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Medal, Dumbbell, Play, Sparkles } from '@lucide/svelte';
+	import { Medal, Dumbbell, Play, Sparkles, Beef, Trophy, Moon, Utensils, TrendingDown, X } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Ring from '$lib/components/Ring.svelte';
 	import { num, dur, readinessBand, shortDate } from '$lib/ui';
@@ -56,6 +56,27 @@
 			class="text-xs text-zinc-500 hover:text-red-400">Discard this workout</button
 		>
 	</form>
+{/if}
+
+<!-- coach notes between workouts (at most one new a day) -->
+{#if data.notes.length}
+	<section class="mb-4 flex flex-col gap-2">
+		{#each data.notes as n, i (n.id)}
+			{@const Icon = ({ protein: Beef, praise: Trophy, sleep: Moon, fasted: Utensils, deficit: TrendingDown } as Record<string, typeof Beef>)[n.kind] ?? Sparkles}
+			<div class="rounded-2xl border p-4 {i === 0 ? 'border-accent/40 bg-accent/[0.06]' : 'border-line bg-panel'}">
+				<div class="flex items-start justify-between gap-2">
+					<p class="flex items-center gap-1.5 text-xs font-bold {n.kind === 'praise' ? 'text-accent2' : i === 0 ? 'text-accent' : 'text-zinc-300'}">
+						<Icon class="h-3.5 w-3.5" />{n.title}
+					</p>
+					<form method="POST" action="?/dismissNote" use:enhance>
+						<input type="hidden" name="id" value={n.id} />
+						<button aria-label="Dismiss note" class="-m-1 p-1 text-zinc-500 hover:text-zinc-300"><X class="h-4 w-4" /></button>
+					</form>
+				</div>
+				<p class="mt-1 text-sm text-zinc-200">{n.body}</p>
+			</div>
+		{/each}
+	</section>
 {/if}
 
 <section class="mb-4 grid gap-4 sm:grid-cols-[auto_1fr]">

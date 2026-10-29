@@ -275,6 +275,10 @@ export function startSession(input: {
 
 export const setSessionSuggestions = (id: number, v: Record<string, unknown>) =>
 	db.update(sessions).set({ suggestions: v }).where(eq(sessions.id, id)).run();
+export const setSessionPlan = (id: number, v: Record<string, unknown>) =>
+	db.update(sessions).set({ plan: v }).where(eq(sessions.id, id)).run();
+export const setSessionChat = (id: number, v: NonNullable<(typeof sessions.$inferSelect)['chat']>) =>
+	db.update(sessions).set({ chat: v }).where(eq(sessions.id, id)).run();
 
 export const findSessionByClientId = (clientId: string) =>
 	db.select().from(sessions).where(eq(sessions.clientId, clientId)).get();

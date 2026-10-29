@@ -10,6 +10,8 @@
 	import { shortDate } from '$lib/ui';
 	import { isApp, native } from '$lib/native';
 	import { belowLb } from '$lib/equipment';
+	import { afterSet } from '$lib/coach/engine';
+	import { KG_PER_LB } from '$lib/units.svelte';
 	import { wt, vol, toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
 
 	type LoggedSet = {
@@ -38,6 +40,8 @@
 		lastReps: number;
 		lastTime?: { date: Date | string; sets: { reps: number; weightKg: number; side?: string | null }[] } | null;
 		suggestion?: { weightKg: number; reps: number; kind: 'up' | 'hold' | 'down'; reason: string } | null;
+		/** Generated sessions: the range the live per-set adjustments work from. */
+		rx?: { repLow: number; repHigh: number; restSec: number; targetReps: number } | null;
 	};
 
 	let {
@@ -47,7 +51,7 @@
 		suggesting = false
 	}: {
 		exercise: Exercise;
-		onLogged: (restSec: number, pr: number | null) => void;
+		onLogged: (restSec: number, pr: number | null, note?: string | null) => void;
 		/** The drop to show on the rest timer: set while this card is off screen, null otherwise. */
 		onNotice?: (exerciseId: number, n: DropNotice | null) => void;
 		suggesting?: boolean; // coach still working out today's weights
@@ -81,6 +85,22 @@
 		weight = toDisplay(s.weightKg);
 	});
 
+	// Later changes to the suggestion (the mid-workout coach changed weight/reps) move the inputs
+	// for the next set. The first arrival is handled above.
+	// svelte-ignore state_referenced_locally
+	let seenSug = exercise.suggestion ? `${exercise.suggestion.weightKg}|${exercise.suggestion.reps}` : '';
+	$effect(() => {
+		const s = exercise.suggestion;
+		const k = s ? `${s.weightKg}|${s.reps}` : '';
+		if (k === seenSug) return;
+		const before = seenSug;
+		seenSug = k;
+		if (!s || !before) return;
+		weight = toDisplay(s.weightKg);
+		reps = repsR = s.reps;
+		drop = raise = null;
+	});
+
 	/** Settable weights below `w` (display units), nearest first. */
 	function lighter(w: number): number[] {
 		if (units() === 'lb') return belowLb(exercise.category, w);
@@ -109,6 +129,13 @@
 	let warmup = $state(false);
 	let justLogged = $state(false);
 	let error = $state('');
+
+	// ---- live raise (generated sessions): beat the range by 2+ reps → next set one step up ----
+	let raise = $state<{ from: number; to: number; note: string } | null>(null);
+
+	// ---- reps left on the last working set (feeds the coach's estimated max; rough is fine) ----
+	let askRir = $state(false);
+	const lastWorkingSet = $derived(exercise.sets.filter((x) => !x.isWarmup).at(-1));
 
 	// ---- weight-drop alert: card in the exercise (B) + rest-timer banner when off screen (A) ----
 	let drop = $state<{ from: number; to: number; short: number } | null>(null);
@@ -182,6 +209,32 @@
 </script>
 
 <div bind:this={root}>
+{#if askRir && lastWorkingSet && lastWorkingSet.rpe == null}
+	<form
+		method="POST"
+		action="?/setRir"
+		class="mb-2 rounded-2xl border border-dashed border-[#f5c518]/50 bg-panel p-3"
+		use:enhance={() =>
+			async ({ update }) => {
+				askRir = false;
+				await update({ reset: false });
+			}}
+	>
+		<input type="hidden" name="setId" value={lastWorkingSet.id} />
+		<div class="flex items-baseline justify-between gap-2">
+			<p class="text-sm font-semibold">{exercise.name}: how many more could you have done?</p>
+			<button type="button" onclick={() => (askRir = false)} class="shrink-0 text-[11px] text-zinc-500">Skip</button>
+		</div>
+		<div class="mt-2 grid grid-cols-4 gap-1.5">
+			{#each [0, 1, 2, 3] as r (r)}
+				<button name="rir" value={r} class="rounded-xl border border-line py-2 text-center font-bold text-zinc-200 active:bg-accent2/10"
+					>{r === 3 ? '3+' : r}</button
+				>
+			{/each}
+		</div>
+		<p class="mt-1.5 text-[11px] text-zinc-500">A rough guess is fine.</p>
+	</form>
+{/if}
 {#if complete && !expanded}
 	<!-- finished: one dimmed line, tap to reopen -->
 	<button
@@ -225,7 +278,8 @@
 							? 'text-accent2'
 							: sg.kind === 'down'
 								? 'text-accent'
-								: 'text-zinc-200'}">{wt(sg.weightKg)} × {sg.reps}</span
+								: 'text-zinc-200'}"
+						>{sg.weightKg > 0 ? wt(sg.weightKg) : exercise.category === 'bodyweight' ? 'Bodyweight' : 'Find a weight'} × {sg.reps}</span
 					>
 					<span class="ml-auto text-[11px] text-zinc-500">today</span>
 				</div>
@@ -348,6 +402,8 @@
 				error = '';
 				justLogged = true;
 				drop = null;
+				raise = null;
+				const loggedW = weight; // what was just posted, before any change below
 				const got = exercise.perSide ? Math.min(reps, repsR) : reps;
 				const lastSet = !warmup && doneWorking + 1 >= exercise.targetSets;
 				const to = warmup || lastSet ? null : nextSetDrop(targetReps, got, weight);
@@ -356,9 +412,29 @@
 					weight = to;
 					buzz();
 				}
+				// Generated sessions: the engine's per-set rules (up a step after beating the range by 2+,
+				// longer rest when reps fall off). Works in lb; drops stay with the gentler rule above.
+				let rest = exercise.restSec;
+				let note: string | null = null;
+				if (exercise.rx && !warmup) {
+					const lb = (kg: number) => Math.round((kg / KG_PER_LB) * 2) / 2;
+					const done = [
+						...exercise.sets.filter((x) => !x.isWarmup).map((x) => ({ reps: x.reps, weightLb: lb(x.weightKg) })),
+						{ reps: got, weightLb: lb(fromDisplay(loggedW)) }
+					];
+					const a = afterSet(exercise.rx, exercise.category, done);
+					rest = a.restSec;
+					note = a.note;
+					if (!lastSet && to == null && a.weightLb > done.at(-1)!.weightLb) {
+						raise = { from: weight, to: toDisplay(a.weightLb * KG_PER_LB), note: a.note ?? '' };
+						weight = raise.to;
+						reps = repsR = a.targetReps;
+					}
+				}
 				const pr = result.type === 'success' ? ((result.data?.pr as number | null) ?? null) : null;
-				onLogged(exercise.restSec, pr);
+				onLogged(rest, pr, note);
 				await update({ reset: false });
+				if (lastSet && !warmup) askRir = true;
 				if (lastSet) addingExtra = false;
 				setTimeout(() => (justLogged = false), 600);
 			};
@@ -391,6 +467,23 @@
 						class="flex-1 rounded-lg border border-ink px-3 py-2">Keep {drop.from}</button
 					>
 				</div>
+			</div>
+		{/if}
+		{#if raise}
+			<div class="mb-3 rounded-xl bg-ink p-3">
+				<p class="text-[11px] text-zinc-500">Set {doneWorking + 1} of {exercise.targetSets} · changed</p>
+				<div class="flex items-center gap-2 text-2xl font-black tabular-nums text-accent2">
+					<ArrowUp class="h-5 w-5" />{raise.to} {units()} × {exercise.rx?.repLow}–{exercise.rx?.repHigh}
+				</div>
+				<p class="mt-0.5 text-[11px] text-zinc-400">{raise.note}</p>
+				<button
+					type="button"
+					onclick={() => {
+						weight = raise!.from;
+						raise = null;
+					}}
+					class="mt-2 text-xs font-semibold text-zinc-400 underline underline-offset-2">Keep {raise.from}</button
+				>
 			</div>
 		{/if}
 		<div class="grid gap-3 {exercise.perSide ? 'grid-cols-3 gap-2' : 'grid-cols-2'}">

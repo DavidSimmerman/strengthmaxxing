@@ -224,7 +224,7 @@ export function lastTopSet(exerciseId: number) {
  * POST to the coach agent. Plain node:http, not fetch: research turns run longer than fetch's
  * fixed 5-minute wait for response headers. `_fetchFn` is kept for call-site compatibility.
  */
-export function callAgent(path: '/plan' | '/progress' | '/review', body: unknown, _fetchFn?: typeof fetch) {
+export function callAgent(path: '/plan' | '/progress' | '/review' | '/live' | '/note', body: unknown, _fetchFn?: typeof fetch) {
 	const url = new URL(path, AGENT_URL);
 	// every request carries how weights round on this equipment
 	const payload = JSON.stringify({ rounding: EQUIPMENT_ROUNDING, ...(body as object) });
@@ -324,7 +324,7 @@ export type SessionSuggestions = {
 	summary?: string;
 	error?: string;
 	// keyed by exerciseId
-	items?: Record<string, { weightKg: number; reps: number; kind: 'up' | 'hold' | 'down'; reason: string }>;
+	items?: Record<string, { weightKg: number; reps: number; kind: 'up' | 'hold' | 'down'; reason: string; sets?: number }>;
 };
 
 /** Ask the coach for this session's weights and store them on the session (runs in the background). */

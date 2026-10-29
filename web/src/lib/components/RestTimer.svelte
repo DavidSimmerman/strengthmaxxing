@@ -8,7 +8,7 @@
 	import { mmss } from '$lib/ui';
 	import { isApp, native } from '$lib/native';
 
-	let { restSec = 120, runKey = 0 }: { restSec?: number; runKey?: number } = $props();
+	let { restSec = 120, runKey = 0, note = null }: { restSec?: number; runKey?: number; note?: string | null } = $props();
 
 	let total = $state(0);
 	let remaining = $state(0);
@@ -166,6 +166,7 @@
 			<div class="text-xs font-semibold uppercase tracking-wider {done ? 'text-accent2' : 'text-zinc-400'}">
 				{done ? 'Rest complete — go' : 'Resting'}
 			</div>
+			{#if note && !done}<p class="mt-0.5 text-[11px] leading-snug text-zinc-400">{note}</p>{/if}
 			<div class="mt-1 flex gap-1.5">
 				{#if done}
 					<button

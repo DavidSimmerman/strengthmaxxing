@@ -8,6 +8,8 @@
 //   POST /plan     -> {plan:{name,weeks,deloadWeek,progression,days:[{name,dayOfWeek,exercises:[{name,sets,reps,restSec,weightKg,notes}]}]},rationale,reply}
 //   POST /progress -> {adjustments:[{name,suggestedWeightKg,suggestedReps,deltaPct,reason}],summary}
 //   POST /review   -> {summary,items:[{name,swapTo,reason}]}  (today's generated workout)
+//   POST /live     -> {reply,actions:[...]}                    (mid-workout chat)
+//   POST /note     -> {title,body}                             (home-screen coach note)
 
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
@@ -52,11 +54,11 @@ function cliEnv() {
   return env;
 }
 
-function callClaudeCli(prompt, { research = false } = {}) {
+function callClaudeCli(prompt, { research = false, effort = AGENT_EFFORT } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(
       CLI_BIN,
-      ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', AGENT_EFFORT,
+      ['-p', '--output-format', 'json', '--model', AGENT_MODEL, '--effort', effort,
         ...(research ? ['--allowedTools', 'WebSearch', 'WebFetch'] : [])],
       { timeout: research ? RESEARCH_TIMEOUT_MS : MODEL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, env: cliEnv() },
       (err, stdout, stderr) => {
@@ -83,7 +85,7 @@ function callClaudeCli(prompt, { research = false } = {}) {
 }
 
 // Fallback: Anthropic Messages API. Returns the concatenated text of the reply.
-async function callAnthropicApi(prompt, { research = false } = {}) {
+async function callAnthropicApi(prompt, { research = false, effort = AGENT_EFFORT } = {}) {
   const messages = [{ role: 'user', content: prompt }];
   // Server-side web tools may pause a long turn; resend to let it continue (a few times max).
   for (let turn = 0; turn < 4; turn++) {
@@ -99,7 +101,7 @@ async function callAnthropicApi(prompt, { research = false } = {}) {
       body: JSON.stringify({
         model: AGENT_MODEL,
         max_tokens: 16000,
-        output_config: { effort: AGENT_EFFORT },
+        output_config: { effort },
         fallbacks: 'default',
         ...(research
           ? { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 },
@@ -349,6 +351,61 @@ function validateReview(b) {
   return null;
 }
 
+// Mid-workout chat: a short reply plus actions the web app validates and applies.
+function livePrompt(input) {
+  const schema =
+    '{"reply":string,"actions":[' +
+    '{"type":"swap","exercise":string,"to":string}|' +
+    '{"type":"adjust","exercise":string,"weightLb":number|null,"reps":number|null}|' +
+    '{"type":"sets","exercise":string,"sets":number}|' +
+    '{"type":"dislike","exercise":string}|' +
+    '{"type":"injury","muscles":[string],"note":string}]}';
+  return [
+    'You are the lifter\'s strength coach, talking to them DURING a workout, between sets. Be brief: ' +
+      'one to three short sentences, plain words, no emojis. Respond with ONLY strict minified JSON.',
+    `Session and context (JSON): ${JSON.stringify(input)}`,
+    '',
+    'Do what they ask through actions (the app applies them; you only describe what you did):',
+    '- "swap": replace an exercise. "to" MUST be an exact name from alternatives[exercise] (same muscle, ' +
+      'equipment they own). Pick the best fit for what they said (pain → a gentler, more stable option; ' +
+      '"don\'t like" → a different movement). Never swap an exercise that already has all its sets done.',
+    '- "adjust": change today\'s weight and/or reps for an exercise (e.g. "too heavy", "shoulder hurts, back off"). ' +
+      'weightLb is the per-dumbbell / stack / bar weight in lb; the app rounds it to what the equipment allows. ' +
+      'Typical back-off is 10-20%. null leaves that value unchanged.',
+    '- "sets": set the total working sets for an exercise (1-8), e.g. "cut this to 2 sets".',
+    '- "dislike": they say they hate / never want an exercise: it is never programmed again. Usually pair with a swap.',
+    '- "injury": something hurts. muscles from: chest, frontDelts, sideDelts, rearDelts, lats, upperBack, ' +
+      'biceps, triceps, abs, obliques, quads, hamstrings, glutes, calves (the ones the painful joint/area loads). ' +
+      'The app keeps those lighter for 7 days. Sharp pain or pain that changes how they move: tell them to stop ' +
+      'that exercise and not push through; suggest getting it checked if it persists. You are not a doctor.',
+    'Questions (form cues, why this exercise, how long to rest) need no actions: just answer.',
+    'Exercise names in actions must exactly match names in session.exercises.',
+    `Output ONLY minified JSON of this shape: ${schema}`,
+  ].join('\n');
+}
+
+// A short coach note for the home screen, written from facts the app already worked out.
+function notePrompt(input) {
+  const lb = input.units !== 'kg';
+  return [
+    'You write one short note from a strength coach to the lifter, shown on their app\'s home screen between ' +
+      'workouts. Respond with ONLY strict minified JSON: {"title":string,"body":string}.',
+    `Kind and facts (JSON): ${JSON.stringify(input)}`,
+    '- title: 1-3 words (e.g. "Protein", "Nice work", "Heads up", "Sleep").',
+    '- body: at most two sentences, plain and specific, using ONLY the numbers in facts (round sensibly). ' +
+      'Say what you noticed and one concrete thing to do. Praise is warm and specific, not cheesy. ' +
+      'Diet or weight notes are practical, never shaming. No emojis, no medical claims.',
+    `Weights in ${lb ? 'pounds (lb)' : 'kg'}; protein in grams.`,
+  ].join('\n');
+}
+
+function validateLive(b) {
+  if (!b || typeof b !== 'object') return 'body required';
+  if (typeof b.message !== 'string' || !b.message.trim()) return 'message required';
+  if (!b.session || !Array.isArray(b.session.exercises)) return 'session.exercises[] required';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
@@ -407,7 +464,7 @@ async function handleModelEndpoint(res, prompt, opts = {}) {
       // The retry only reformats, so it skips research.
       text = attempt === 0
         ? await askModel(prompt, opts)
-        : await askModel(`${prompt}\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object.`);
+        : await askModel(`${prompt}\n\nYour previous reply was not valid JSON. Reply with ONLY the JSON object.`, { effort: opts.effort });
     } catch (e) {
       return send(res, 502, { error: `model call failed: ${e.message}` });
     }
@@ -440,6 +497,22 @@ const server = createServer(async (req, res) => {
     if (err) return send(res, 400, { error: err });
     const prompt = url === '/plan' ? planPrompt(body) : progressPrompt(body);
     return handleModelEndpoint(res, prompt, { research: url === '/plan' && RESEARCH && !body.noResearch });
+  }
+
+  if (req.method === 'POST' && (url === '/live' || url === '/note')) {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+    if (url === '/live') {
+      const err = validateLive(body);
+      if (err) return send(res, 400, { error: err });
+      return handleModelEndpoint(res, livePrompt(body), { effort: 'low' }); // between sets: fast
+    }
+    if (!body || typeof body.kind !== 'string') return send(res, 400, { error: 'kind required' });
+    return handleModelEndpoint(res, notePrompt(body), { effort: 'low' });
   }
 
   if (req.method === 'POST' && url === '/review') {

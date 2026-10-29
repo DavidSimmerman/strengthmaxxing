@@ -20,6 +20,23 @@ createServer(async (req, res) => {
 	}
 	if (req.url === '/progress')
 		return send({ adjustments: b.workout.exercises.map((e) => ({ name: e.name, suggestedWeightKg: 62.5, suggestedReps: e.targetReps, kind: 'up', deltaPct: 4, reason: 'test' })), summary: 'ok' });
+	if (req.url === '/live') {
+		// Keyword stand-in for the mid-workout coach: "heavy" → back off 15%, "hate X" → dislike +
+		// swap the last exercise, "hurt" → note pain on front delts and cut the first exercise to 2 sets.
+		const m = b.message.toLowerCase();
+		const xs = b.session.exercises;
+		const open = xs.find((x) => x.done.length < x.targetSets && x.today?.weightLb > 0) ?? xs[0];
+		const actions = [];
+		if (m.includes('heavy') && open.today) actions.push({ type: 'adjust', exercise: open.name, weightLb: open.today.weightLb * 0.85, reps: null });
+		if (m.includes('hate')) {
+			const last = xs.at(-1);
+			actions.push({ type: 'dislike', exercise: last.name });
+			if (b.alternatives[last.name]?.[0]) actions.push({ type: 'swap', exercise: last.name, to: b.alternatives[last.name][0] });
+		}
+		if (m.includes('hurt')) actions.push({ type: 'injury', muscles: ['frontDelts', 'nonsense'], note: b.message }, { type: 'sets', exercise: xs[0].name, sets: 2 });
+		return send({ reply: `Fake coach: ${actions.length} change(s).`, actions });
+	}
+	if (req.url === '/note') return send({ title: 'Fake note', body: `Fake ${b.kind} note.` });
 	if (req.url === '/review') {
 		// Swaps the last exercise for its first alternative (when there is one) to exercise the swap path.
 		const xs = b.plan.exercises;

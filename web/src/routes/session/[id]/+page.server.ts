@@ -103,6 +103,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		const done = (setsByExercise.get(p.exerciseId) ?? []).sort((a, b) => a.setIndex - b.setIndex);
 		return {
 			...p,
+			// The mid-workout coach can change how many sets an exercise gets.
+			targetSets: sug?.items?.[p.exerciseId]?.sets ?? p.targetSets,
 			sets: done.map((s) => ({
 				id: s.id,
 				setIndex: s.setIndex,
@@ -115,6 +117,11 @@ export const load: PageServerLoad = async ({ params }) => {
 			})),
 			lastTime: last.get(p.exerciseId) ?? null,
 			suggestion: sug?.items?.[p.exerciseId] ?? null,
+			// Generated sessions: rep range + rest the live per-set adjustments work from.
+			rx: (() => {
+				const x = generated.find((g) => g.exerciseId === p.exerciseId);
+				return x ? { repLow: x.repLow, repHigh: x.repHigh, restSec: x.restSec, targetReps: x.targetReps } : null;
+			})(),
 			bestE1rm: best.get(p.exerciseId) ?? 0,
 			lastWeight: done.length
 				? done[done.length - 1].weightKg
@@ -138,6 +145,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const totalSets = session.sets.filter((s) => !s.isWarmup).length;
 
 	return {
+		chat: session.chat ?? [],
 		session: {
 			id: session.id,
 			name: session.name,
@@ -202,6 +210,15 @@ export const actions: Actions = {
 		return { ok: true, loggedExercise: exerciseId, pr };
 	},
 
+	// "How many more could you have done?" on an exercise's last set: stored as RPE (10 − reps left).
+	setRir: async ({ params, request }) => {
+		const fd = await request.formData();
+		const setId = Number(fd.get('setId'));
+		const rir = Number(fd.get('rir'));
+		if (!Number.isInteger(setId) || !Number.isInteger(rir) || rir < 0 || rir > 5) return fail(400, { error: 'Bad reps-left value' });
+		if (!repo.updateSet(Number(params.id), setId, { rpe: 10 - rir })) return fail(404, { error: 'Set not found' });
+		return { ok: true };
+	},
 	editSet: async ({ params, request }) => {
 		const fd = await request.formData();
 		const f = setFields(fd);

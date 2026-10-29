@@ -70,6 +70,8 @@ export const sessions = sqliteTable('sessions', {
 	// Generated session (dynamic coach): exercises with sets / reps / weight / rest / reasons.
 	// Null for template and ad-hoc sessions. Shape: SessionPlan in $lib/coach/build.
 	plan: text({ mode: 'json' }).$type<Record<string, unknown>>(),
+	// Mid-workout chat with the coach: [{role:'user'|'coach', text, at, applied?: string[]}].
+	chat: text({ mode: 'json' }).$type<{ role: 'user' | 'coach'; text: string; at: string; applied?: string[] }[]>(),
 	// cached rollups (recomputed on session end) so exports/reports stay cheap:
 	totalVolumeKg: real().notNull().default(0),
 	estimatedKcal: real().notNull().default(0), // active kcal (matches Apple's "Active Calories")
@@ -195,3 +197,18 @@ export const sessionSetsRel = relations(sessionSets, ({ one, many }) => ({
 export const repEventsRel = relations(repEvents, ({ one }) => ({
 	set: one(sessionSets, { fields: [repEvents.sessionSetId], references: [sessionSets.id] })
 }));
+
+/**
+ * Short coach notes shown on the home screen between workouts (protein, training fasted,
+ * sleep, praise…). At most one new note per day; `day` is the local date it was written for.
+ */
+export const coachNotes = sqliteTable('coach_notes', {
+	id: integer().primaryKey({ autoIncrement: true }),
+	day: text().notNull(), // YYYY-MM-DD
+	kind: text().notNull(), // protein | fasted | deficit | sleep | praise
+	title: text().notNull(),
+	body: text().notNull(),
+	facts: text({ mode: 'json' }).$type<Record<string, unknown>>(),
+	createdAt: integer({ mode: 'timestamp' }).notNull().default(now),
+	dismissedAt: integer({ mode: 'timestamp' })
+});

@@ -50,6 +50,13 @@
       "when": 1793238974440,
       "tag": "0006_session_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793290867937,
+      "tag": "0007_coach_chat_notes",
+      "breakpoints": true
     }
   ]
 }

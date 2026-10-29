@@ -5,9 +5,12 @@ import { db } from '$lib/db';
 import { sessionSets } from '$lib/db/schema';
 import { e1rm } from '$lib/metrics';
 import { isoDay } from '$lib/ui';
+import { currentNotes, dismissNote, ensureTodayNote } from '$lib/server/notes';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
+	// Today's coach note is written in the background; it shows on the next visit (or refresh).
+	void ensureTodayNote();
 	const today = isoDay();
 	const readiness = repo.getReadiness(today) ?? null;
 
@@ -71,11 +74,17 @@ export const load: PageServerLoad = async () => {
 				}
 			: null,
 		prs,
-		workouts: workouts.map((w) => ({ id: w.id, name: w.name, exerciseCount: w.exercises.length }))
+		workouts: workouts.map((w) => ({ id: w.id, name: w.name, exerciseCount: w.exercises.length })),
+		notes: currentNotes()
 	};
 };
 
 export const actions: Actions = {
+	dismissNote: async ({ request }) => {
+		const id = Number((await request.formData()).get('id'));
+		if (Number.isInteger(id)) dismissNote(id);
+		return { ok: true };
+	},
 	// start an ad-hoc or template session, jump straight into logging
 	start: async ({ request }) => {
 		const fd = await request.formData();

@@ -8,6 +8,7 @@
 	import ExerciseLogger, { type DropNotice } from '$lib/components/ExerciseLogger.svelte';
 	import { ArrowDown } from '@lucide/svelte';
 	import RestTimer from '$lib/components/RestTimer.svelte';
+	import CoachChat from '$lib/components/CoachChat.svelte';
 	import { dur, supersetLabel } from '$lib/ui';
 	import { vol, wt, units } from '$lib/units.svelte';
 	import type { PageData } from './$types';
@@ -34,8 +35,10 @@
 	});
 
 	let prFlash = $state<string | null>(null);
-	function onLogged(sec: number, pr: number | null) {
+	let restNote = $state<string | null>(null);
+	function onLogged(sec: number, pr: number | null, note: string | null = null) {
 		restSec = sec;
+		restNote = note;
 		restKey += 1;
 		if (pr) {
 			prFlash = `New PR! Estimated 1-rep max ${wt(pr)}`;
@@ -116,7 +119,10 @@
 		<p class="text-[11px] font-bold uppercase tracking-widest text-accent">Live session</p>
 		<h1 class="truncate text-2xl font-black tracking-tight">{data.session.name}</h1>
 	</div>
-	<a href="/history" class="text-sm text-zinc-500 hover:text-zinc-300" aria-label="close"><X class="h-5 w-5" /></a>
+	<div class="flex shrink-0 items-center gap-3">
+		<CoachChat sessionId={data.session.id} chat={data.chat} />
+		<a href="/history" class="text-sm text-zinc-500 hover:text-zinc-300" aria-label="close"><X class="h-5 w-5" /></a>
+	</div>
 </header>
 
 <!-- live stats bar -->
@@ -150,7 +156,7 @@
 
 <!-- sticky rest timer -->
 <div class="sticky-safe sticky z-10 mb-4 flex flex-col gap-2">
-	<RestTimer {restSec} runKey={restKey} />
+	<RestTimer {restSec} runKey={restKey} note={restNote} />
 	{#each Object.values(notices) as n (n.exerciseId)}
 		<button
 			type="button"

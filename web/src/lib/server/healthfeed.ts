@@ -25,12 +25,13 @@ export type HealthFeed = {
 };
 
 const TTL_MS = 5 * 60_000;
-let cache: { at: number; feed: HealthFeed | null } | null = null;
+const cache = new Map<number, { at: number; feed: HealthFeed | null }>();
 
 export async function healthFeed(days = 7): Promise<HealthFeed | null> {
 	const token = env.HEALTHMAXXING_TOKEN;
 	if (!token) return null;
-	if (cache && Date.now() - cache.at < TTL_MS) return cache.feed;
+	const hit = cache.get(days);
+	if (hit && Date.now() - hit.at < TTL_MS) return hit.feed;
 	const base = env.HEALTHMAXXING_URL || 'https://healthmaxxing.simmerman.tech';
 	let feed: HealthFeed | null = null;
 	try {
@@ -43,7 +44,7 @@ export async function healthFeed(days = 7): Promise<HealthFeed | null> {
 	} catch (e) {
 		console.warn('healthmaxxing feed unreachable:', e instanceof Error ? e.message : e);
 	}
-	cache = { at: Date.now(), feed };
+	cache.set(days, { at: Date.now(), feed });
 	return feed;
 }
 

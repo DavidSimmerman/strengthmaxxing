@@ -81,6 +81,10 @@ API responses are ISO strings (Drizzle `Date`). Client-supplied timestamps (`sta
 - `POST /api/coach/today/review` body `{plan}` (a SessionPlan from `/today`) → the plan after the
   agent's `POST /review` (same-muscle swaps from an allowed list, reasons, summary). 502 when the
   agent fails; the caller keeps the engine's plan.
+- `POST /api/sessions/:id/coach` body `{message}` → `{reply, applied[]}`: mid-workout chat. Forwards to
+  agent `POST /live`; validates and applies its actions (swap to a same-muscle exercise the lifter
+  can do, weight snapped to the equipment, sets 1-8 and never below sets done, dislike, pain on
+  muscles → kept lighter 7 days). History is stored on `sessions.chat`.
 
 Every endpoint: validate input (400 on bad body), JSON errors `{error:string}`, never throw raw.
 
@@ -108,6 +112,10 @@ Exercise names in `/progress` output must match input names so the app can map t
    alternatives:{[name]:[name]}, checkIn, profile}` →
   `{"summary":"...","items":[{"name":"...","swapTo":null,"reason":"..."}]}`. `swapTo` must come
   from `alternatives[name]`; the web side re-prescribes swapped exercises and ignores anything else.
+- `POST /live` body `{message, session:{exercises:[{name,forMuscle,targetSets,today,done}]}, alternatives,
+   profile, recentChat}` → `{"reply":"...","actions":[{"type":"swap"|"adjust"|"sets"|"dislike"|"injury",…}]}`
+   (low effort, for speed between sets).
+- `POST /note` body `{kind, facts, units}` → `{"title":"...","body":"..."}` (home-screen coach note).
 
 ---
 

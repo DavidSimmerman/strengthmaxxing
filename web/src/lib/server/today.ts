@@ -75,6 +75,10 @@ export async function planTodayLive(checkIn: CheckIn): Promise<DayPlan> {
 
 export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = new Date(), cuttingHint: boolean | null = null): DayPlan {
 	const profile = getProfile();
+	// Reported pain keeps those muscles lighter for a week (treated as at least "a bit sore").
+	const soreness = { ...checkIn.soreness };
+	for (const inj of activeInjuries(now)) for (const m of inj.muscles) soreness[m] = Math.max(soreness[m] ?? 0, 1) as 1 | 2;
+	checkIn = { ...checkIn, soreness };
 	return buildDay({
 		now,
 		sets: recentSets(now),
@@ -256,6 +260,35 @@ export async function reviewPlan(plan: SessionPlan): Promise<SessionPlan> {
 	});
 	const summary = typeof r.summary === 'string' ? r.summary.slice(0, 400) : null;
 	return { ...plan, exercises: out, summary, reviewed: true };
+}
+
+/** Engine prescription for one exercise today (used for swaps: preview review, mid-workout chat). */
+export function prescribeFor(
+	ex: { name: string; muscle: string; category: string },
+	forMuscle: Muscle,
+	sets: number,
+	checkIn: Pick<CheckIn, 'energy' | 'soreness'>
+) {
+	return prescribe(ex.name, ex.muscle, sets, historyOf(recentSets(), ex.name), {
+		category: ex.category,
+		tier: coachSettings().tiers[forMuscle],
+		energy: checkIn.energy,
+		sore: (checkIn.soreness[forMuscle] ?? 0) as 0 | 1 | 2
+	});
+}
+
+export type Injury = { muscles: Muscle[]; note: string; until: string };
+
+/** Pain the lifter reported mid-workout: those muscles count as "a bit sore" until it expires. */
+export function activeInjuries(now = new Date()): Injury[] {
+	const p = (repo.getSettings().profile ?? {}) as { dynamic?: { injuries?: Injury[] } };
+	return (p.dynamic?.injuries ?? []).filter((i) => new Date(i.until) > now);
+}
+
+export function addInjury(muscles: Muscle[], note: string, days = 7) {
+	const cur = (repo.getSettings().profile ?? {}) as Record<string, unknown> & { dynamic?: Record<string, unknown> & { injuries?: Injury[] } };
+	const injuries = [...activeInjuries(), { muscles, note: note.slice(0, 200), until: new Date(Date.now() + days * 864e5).toISOString() }];
+	repo.patchSettings({ profile: { ...cur, dynamic: { ...(cur.dynamic ?? {}), injuries } } });
 }
 
 function historyOf(sets: LoggedSet[], name: string): History {
