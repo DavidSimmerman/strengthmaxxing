@@ -1,11 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as repo from '$lib/server/repo';
-import { checkinTiles, planSuggestions, planToday, sorenessFromTiles, toSessionPlan, TILES, type SessionPlan } from '$lib/server/today';
+import { feedActivities, healthFeed } from '$lib/server/healthfeed';
+import { checkinTiles, planSuggestions, planTodayLive, sorenessFromTiles, toSessionPlan, TILES, type SessionPlan } from '$lib/server/today';
 import { isoDay } from '$lib/ui';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = () => ({
-	tiles: checkinTiles(),
+export const load: PageServerLoad = async () => ({
+	tiles: checkinTiles(feedActivities(await healthFeed())),
 	open: repo.openSessions()
 });
 
@@ -35,7 +36,7 @@ export const actions: Actions = {
 	build: async ({ request }) => {
 		const c = readCheckIn(await request.formData());
 		const checkIn = { energy: c.energy, minutes: c.minutes, soreness: c.soreness };
-		return { plan: toSessionPlan(planToday(checkIn), checkIn) };
+		return { plan: toSessionPlan(await planTodayLive(checkIn), checkIn) };
 	},
 	start: async ({ request }) => {
 		const fd = await request.formData();

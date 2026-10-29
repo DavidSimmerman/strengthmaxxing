@@ -24,15 +24,16 @@ import { LEG_MUSCLES, MUSCLES, primaryMuscle, profileFor, type Muscle } from '$l
 import * as repo from './repo';
 import { callAgent, getProfile } from './coach';
 import { isoDay } from '$lib/ui';
+import { feedActivities, feedCutting, healthFeed } from './healthfeed';
 
 /** Coach settings live in the profile JSON under `dynamic`; defaults are David's priorities. */
-export function coachSettings(): CoachSettings {
+export function coachSettings(cuttingHint: boolean | null = null): CoachSettings {
 	const p = (repo.getSettings().profile ?? {}) as { dynamic?: Partial<CoachSettings> };
 	const d = p.dynamic ?? {};
 	const tiers = { ...DAVID_TIERS, ...(d.tiers ?? {}) } as Record<Muscle, Tier>;
 	// Cutting unless told otherwise: on by default while yesterday's balance is a real deficit.
 	const r = repo.getReadiness(isoDay(new Date(Date.now() - 864e5)));
-	const cutting = d.cutting ?? (r?.kcalBalance != null ? r.kcalBalance < -300 : true);
+	const cutting = d.cutting ?? cuttingHint ?? (r?.kcalBalance != null ? r.kcalBalance < -300 : true);
 	return { tiers, cutting, tauH: d.tauH ?? {}, lagBonus: d.lagBonus ?? {} };
 }
 
@@ -66,7 +67,13 @@ export function recentSets(now = new Date()): LoggedSet[] {
 		}));
 }
 
-export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = new Date()): DayPlan {
+/** Today's plan with other training and the diet goal from healthmaxxing (when linked). */
+export async function planTodayLive(checkIn: CheckIn): Promise<DayPlan> {
+	const feed = await healthFeed();
+	return planToday(checkIn, feedActivities(feed), new Date(), feedCutting(feed));
+}
+
+export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = new Date(), cuttingHint: boolean | null = null): DayPlan {
 	const profile = getProfile();
 	return buildDay({
 		now,
@@ -78,7 +85,7 @@ export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = n
 			.map((e) => ({ name: e.name, muscle: e.muscle, category: e.category })),
 		dislikes: profile.dislikes,
 		checkIn,
-		settings: coachSettings()
+		settings: coachSettings(cuttingHint)
 	});
 }
 

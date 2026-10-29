@@ -36,6 +36,10 @@ services:
       TZ: "${TZ:-America/New_York}"
       # Internal service DNS name; do NOT expose the agent publicly.
       AGENT_URL: "${AGENT_URL:-http://agent:8787}"
+      # Optional link to healthmaxxing: runs/basketball (leg fatigue), food, sleep, body weight.
+      # Same value as STRENGTHMAXXING_TOKEN on healthmaxxing. Unset = the coach uses lifting data only.
+      HEALTHMAXXING_URL: "${HEALTHMAXXING_URL:-https://healthmaxxing.simmerman.tech}"
+      HEALTHMAXXING_TOKEN: "${HEALTHMAXXING_TOKEN:-}"
     volumes:
       - smx-data:/data
     healthcheck:
