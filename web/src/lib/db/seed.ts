@@ -86,7 +86,10 @@ const LIB: [string, string, string, number, boolean, number][] = [
 	['Cable Kickback', 'glutes', 'cable', 3.5, false, 60],
 	['Bench Dip', 'triceps', 'bodyweight', 5.0, true, 60],
 	['Dumbbell Pullover', 'back', 'dumbbell', 4.0, false, 75],
-	['Dumbbell Step-Up', 'quads', 'dumbbell', 5.0, false, 75]
+	['Dumbbell Step-Up', 'quads', 'dumbbell', 5.0, false, 75],
+	['Box Jump', 'quads', 'bodyweight', 8.0, true, 90],
+	['Single-Leg Romanian Deadlift', 'hamstrings', 'dumbbell', 5.0, false, 75],
+	['Pallof Press', 'core', 'cable', 3.5, false, 45]
 ];
 
 /** Idempotent — safe to run on every boot. Inserts any library exercise not yet present by name,
