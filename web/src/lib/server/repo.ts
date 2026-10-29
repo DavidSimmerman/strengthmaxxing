@@ -254,12 +254,14 @@ export function startSession(input: {
 	clientId?: string | null;
 	startedAt?: number | null; // epoch ms
 	checkin?: { energy: number | null; soreness: Record<string, number> } | null;
+	plan?: Record<string, unknown> | null;
 }) {
 	return db
 		.insert(sessions)
 		.values({
 			clientId: input.clientId ?? null,
 			checkin: input.checkin ?? null,
+			plan: input.plan ?? null,
 			...(input.startedAt ? { startedAt: new Date(input.startedAt) } : {}),
 			workoutId: input.workoutId ?? null,
 			name: input.name ?? 'Workout',

@@ -7,6 +7,7 @@
 //   GET  /health   -> {ok:true}
 //   POST /plan     -> {plan:{name,weeks,deloadWeek,progression,days:[{name,dayOfWeek,exercises:[{name,sets,reps,restSec,weightKg,notes}]}]},rationale,reply}
 //   POST /progress -> {adjustments:[{name,suggestedWeightKg,suggestedReps,deltaPct,reason}],summary}
+//   POST /review   -> {summary,items:[{name,swapTo,reason}]}  (today's generated workout)
 
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
@@ -314,6 +315,40 @@ function progressPrompt(input) {
   ].join('\n');
 }
 
+function reviewPrompt(input) {
+  const schema = '{"summary":string,"items":[{"name":string,"swapTo":string|null,"reason":string}]}';
+  const lb = input.units !== 'kg';
+  return [
+    SYSTEM_RULES,
+    '',
+    "Task: review today's generated workout before the lifter starts it. A rules engine already chose the " +
+      'muscles, sets, reps, weights and rest from their recovery, weekly volume per muscle and history. Do NOT ' +
+      'change sets, reps, weights or rest.',
+    `Inputs (JSON): ${JSON.stringify(input)}`,
+    '',
+    '1. Exercise choice. For each exercise you MAY swap it for one name from alternatives[exerciseName] ' +
+      '(same muscle, equipment they own) when that is clearly better for them today: profile.avoid / notes ' +
+      '(injuries, "legs light because I run"), a joint likely to be irritated, or a much better stretch-position ' +
+      'option. Prefer keeping exercises they have history on (engineReason mentions last time) so progress stays ' +
+      'trackable. Most days: no swaps. swapTo must be null or an exact name from that list.',
+    '2. "reason": ONE short sentence per exercise, in plain words, saying why it is in today\'s session and why ' +
+      'this weight/reps. Use engineReason\'s facts (last time, weekly sets, recovery, soreness) - never invent ' +
+      'numbers. If you swapped, say why. e.g. "Chest is your top priority and fresh; you hit 10 on every set at 135, ' +
+      'so 140 today."',
+    '3. "summary": one or two sentences on today: what it focuses on and why the rest is resting (see resting). ' +
+      'Encouraging but not cheesy.',
+    `Write weights in ${lb ? 'pounds (lb)' : 'kg'}. One item per input exercise; "name" must exactly match the input name.`,
+    `Output ONLY minified JSON of this shape: ${schema}`,
+  ].join('\n');
+}
+
+function validateReview(b) {
+  if (!b || typeof b !== 'object') return 'body required';
+  if (!b.plan || !Array.isArray(b.plan.exercises)) return 'plan.exercises[] required';
+  if (b.alternatives != null && typeof b.alternatives !== 'object') return 'alternatives must be an object';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
@@ -405,6 +440,18 @@ const server = createServer(async (req, res) => {
     if (err) return send(res, 400, { error: err });
     const prompt = url === '/plan' ? planPrompt(body) : progressPrompt(body);
     return handleModelEndpoint(res, prompt, { research: url === '/plan' && RESEARCH && !body.noResearch });
+  }
+
+  if (req.method === 'POST' && url === '/review') {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+    const err = validateReview(body);
+    if (err) return send(res, 400, { error: err });
+    return handleModelEndpoint(res, reviewPrompt(body));
   }
 
   return send(res, 404, { error: 'not found' });

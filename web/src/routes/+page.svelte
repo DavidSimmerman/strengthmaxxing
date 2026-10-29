@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Medal, Dumbbell, Play } from '@lucide/svelte';
+	import { Medal, Dumbbell, Play, Sparkles } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Ring from '$lib/components/Ring.svelte';
 	import { num, dur, readinessBand, shortDate } from '$lib/ui';
@@ -73,29 +73,28 @@
 	<!-- start a session -->
 	<div class="flex flex-col rounded-2xl border border-line bg-panel p-5">
 		<h2 class="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-400">Start training</h2>
+		<a
+			href="/today"
+			class="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-center font-bold text-ink transition active:scale-[0.98]"
+		>
+			<Sparkles class="h-4 w-4" />Today's workout
+		</a>
 		{#if data.workouts.length}
-			<div class="mb-3 flex flex-col gap-2">
+			<p class="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Or a saved workout</p>
+			<div class="mb-3 flex flex-col gap-1.5">
 				{#each data.workouts as w (w.id)}
 					<a
 						href="/start/{w.id}"
-						class="flex w-full items-center justify-between rounded-xl border border-line bg-ink px-4 py-3 text-left transition hover:border-accent hover:bg-accent/5"
+						class="flex w-full items-center justify-between rounded-xl border border-line bg-ink px-4 py-2.5 text-left text-sm transition hover:border-accent hover:bg-accent/5"
 					>
 						<span class="font-semibold">{w.name}</span>
 						<span class="text-xs tabular-nums text-zinc-500">{w.exerciseCount} exercises →</span>
 					</a>
 				{/each}
 			</div>
-		{:else}
-			<p class="mb-3 text-sm text-zinc-500">
-				No templates yet. <a href="/workouts/new" class="text-accent underline underline-offset-2"
-					>Build one</a
-				> or lift ad-hoc.
-			</p>
 		{/if}
 		<form method="POST" action="?/start" use:enhance class="mt-auto">
-			<button
-				class="w-full rounded-xl bg-accent py-3 text-center font-bold text-ink transition active:scale-[0.98]"
-			>
+			<button class="w-full rounded-xl border border-line py-2.5 text-center text-sm font-semibold text-zinc-300 transition hover:border-zinc-500">
 				+ Empty ad-hoc session
 			</button>
 		</form>

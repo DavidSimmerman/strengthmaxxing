@@ -43,6 +43,13 @@
       "when": 1792775206379,
       "tag": "0005_per_side",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793238974440,
+      "tag": "0006_session_plan",
+      "breakpoints": true
     }
   ]
 }

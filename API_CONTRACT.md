@@ -74,6 +74,13 @@ API responses are ISO strings (Drizzle `Date`). Client-supplied timestamps (`sta
 - `POST /api/coach/progress` body `{workoutId,date?}` → the endpoint assembles context from the
   DB (the workout's exercises + last performed weights via repo, latest `readiness` row, current
   hour) and forwards to agent `POST /progress`; returns its JSON.
+- `POST /api/coach/today` body `{energy?:1-5, minutes:10-240, soreness?:{[muscle]:0|1|2}}` →
+  today's generated session from the engine in `web/src/lib/coach` (no model call; instant).
+  Muscles: chest, frontDelts, sideDelts, rearDelts, lats, upperBack, biceps, triceps, abs,
+  obliques, quads, hamstrings, glutes, calves.
+- `POST /api/coach/today/review` body `{plan}` (a SessionPlan from `/today`) → the plan after the
+  agent's `POST /review` (same-muscle swaps from an allowed list, reasons, summary). 502 when the
+  agent fails; the caller keeps the engine's plan.
 
 Every endpoint: validate input (400 on bad body), JSON errors `{error:string}`, never throw raw.
 
@@ -97,6 +104,10 @@ Return STRICT JSON (ask the model for JSON, parse defensively, 502 on parse fail
     "deltaPct":4,"reason":"readiness high, +progression"}],"summary":"..."}
   ```
 Exercise names in `/progress` output must match input names so the app can map them back.
+- `POST /review` body `{plan:{exercises:[{name,forMuscle,sets,reps,weightLb,engineReason,…}]},
+   alternatives:{[name]:[name]}, checkIn, profile}` →
+  `{"summary":"...","items":[{"name":"...","swapTo":null,"reason":"..."}]}`. `swapTo` must come
+  from `alternatives[name]`; the web side re-prescribes swapped exercises and ignores anything else.
 
 ---
 

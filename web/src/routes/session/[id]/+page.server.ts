@@ -3,6 +3,8 @@ import * as repo from '$lib/server/repo';
 import { e1rm } from '$lib/metrics';
 import { estimateSetSec, SWITCH_SEC } from '$lib/rest';
 import type { Actions, PageServerLoad } from './$types';
+import type { SessionPlan } from '$lib/server/today';
+const KG_PER_LB = 0.45359237;
 
 export const load: PageServerLoad = async ({ params }) => {
 	const id = Number(params.id);
@@ -32,7 +34,26 @@ export const load: PageServerLoad = async ({ params }) => {
 	// planned = template slots, then exercises added mid-session, then anything logged that
 	// is in neither (e.g. a set synced from the watch) — so nothing logged is ever hidden.
 	const removed = new Set(session.removedExerciseIds ?? []);
-	const planned: Planned[] = (template?.exercises ?? []).filter((we) => !removed.has(we.exerciseId)).map((we) => ({
+	// A generated session (dynamic coach) carries its own plan instead of a template.
+	const generated = (session.plan as SessionPlan | null)?.exercises ?? [];
+	const lib0 = new Map(repo.listExercises().map((e) => [e.id, e]));
+	const fromPlan: Planned[] = generated
+		.filter((x) => !removed.has(x.exerciseId) && lib0.has(x.exerciseId))
+		.map((x, i) => ({
+			exerciseId: x.exerciseId,
+			name: x.exercise,
+			muscle: lib0.get(x.exerciseId)!.muscle,
+			category: x.category,
+			targetSets: x.sets,
+			targetReps: x.targetReps,
+			targetWeightKg: (x.weightLb ?? 0) * KG_PER_LB,
+			restSec: x.restSec,
+			supersetGroup: x.supersetGroup,
+			perSide: false,
+			orderIndex: i
+		}));
+	const planned: Planned[] = template ? [] : fromPlan;
+	planned.push(...(template?.exercises ?? []).filter((we) => !removed.has(we.exerciseId)).map((we) => ({
 		exerciseId: we.exerciseId,
 		name: we.exercise.name,
 		muscle: we.exercise.muscle,
@@ -44,7 +65,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		supersetGroup: we.supersetGroup,
 		perSide: we.perSide,
 		orderIndex: we.orderIndex
-	}));
+	})));
 	const lib = new Map(repo.listExercises().map((e) => [e.id, e]));
 	const adHoc = (exerciseId: number, weightKg = 0, supersetGroup: number | null = null) => {
 		const e = lib.get(exerciseId);

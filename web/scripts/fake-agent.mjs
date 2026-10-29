@@ -20,5 +20,13 @@ createServer(async (req, res) => {
 	}
 	if (req.url === '/progress')
 		return send({ adjustments: b.workout.exercises.map((e) => ({ name: e.name, suggestedWeightKg: 62.5, suggestedReps: e.targetReps, kind: 'up', deltaPct: 4, reason: 'test' })), summary: 'ok' });
+	if (req.url === '/review') {
+		// Swaps the last exercise for its first alternative (when there is one) to exercise the swap path.
+		const xs = b.plan.exercises;
+		return send({
+			summary: 'Reviewed by the fake coach.',
+			items: xs.map((e, i) => ({ name: e.name, swapTo: i === xs.length - 1 ? (b.alternatives?.[e.name]?.[0] ?? null) : null, reason: `Reviewed: ${e.name}.` }))
+		});
+	}
 	res.writeHead(200); res.end('{"ok":true}');
 }).listen(Number(process.env.PORT) || 4399);

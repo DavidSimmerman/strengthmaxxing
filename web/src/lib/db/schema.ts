@@ -67,6 +67,9 @@ export const sessions = sqliteTable('sessions', {
 	checkin: text({ mode: 'json' }).$type<{ energy: number | null; soreness: Record<string, number> }>(),
 	// coach's per-exercise suggestions for this session (filled in the background)
 	suggestions: text({ mode: 'json' }).$type<Record<string, unknown>>(),
+	// Generated session (dynamic coach): exercises with sets / reps / weight / rest / reasons.
+	// Null for template and ad-hoc sessions. Shape: SessionPlan in $lib/coach/build.
+	plan: text({ mode: 'json' }).$type<Record<string, unknown>>(),
 	// cached rollups (recomputed on session end) so exports/reports stay cheap:
 	totalVolumeKg: real().notNull().default(0),
 	estimatedKcal: real().notNull().default(0), // active kcal (matches Apple's "Active Calories")
