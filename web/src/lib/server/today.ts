@@ -110,7 +110,14 @@ export function hasEquipment(name: string, category: string, equipment: string[]
 	if (category === 'bodyweight') return true;
 	if (category === 'smith machine') return have.includes('smith');
 	if (category === 'machine') return /machine|leg press|leg ext|leg curl|pec deck|preacher|hack/.test(have.replaceAll('smith machine', ''));
-	return have.includes(category === 'dumbbell' ? 'dumbbell' : category);
+	// Brand names and shorthand count too ("Bowflex SelectTech", "DBs", "cable stack").
+	const words: Record<string, string[]> = {
+		dumbbell: ['dumbbell', 'dumbell', 'selecttech', 'bowflex', 'db'],
+		cable: ['cable', 'pulley', 'functional trainer'],
+		barbell: ['barbell', 'olympic bar', 'squat rack', 'power rack'],
+		kettlebell: ['kettlebell', 'kb']
+	};
+	return (words[category] ?? [category]).some((w) => new RegExp(`\\b${w}`).test(have));
 }
 
 export const isMuscle = (m: string): m is Muscle => (MUSCLES as readonly string[]).includes(m);
