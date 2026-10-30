@@ -33,6 +33,8 @@ createServer(async (req, res) => {
 			actions.push({ type: 'dislike', exercise: last.name });
 			if (b.alternatives[last.name]?.[0]) actions.push({ type: 'swap', exercise: last.name, to: b.alternatives[last.name][0] });
 		}
+		const skip = xs.find((x) => m.includes(`no ${x.name.toLowerCase()}`));
+		if (skip) actions.push({ type: 'remove', exercise: skip.name });
 		if (m.includes('hurt')) actions.push({ type: 'injury', muscles: ['frontDelts', 'nonsense'], note: b.message }, { type: 'sets', exercise: xs[0].name, sets: 2 });
 		return send({ reply: `Fake coach: ${actions.length} change(s).`, actions });
 	}

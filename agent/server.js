@@ -358,10 +358,15 @@ function livePrompt(input) {
     '{"type":"swap","exercise":string,"to":string}|' +
     '{"type":"adjust","exercise":string,"weightLb":number|null,"reps":number|null}|' +
     '{"type":"sets","exercise":string,"sets":number}|' +
+    '{"type":"remove","exercise":string}|' +
     '{"type":"dislike","exercise":string}|' +
     '{"type":"injury","muscles":[string],"note":string}]}';
+  const preview = input.stage === 'preview';
   return [
-    'You are the lifter\'s strength coach, talking to them DURING a workout, between sets. Be brief: ' +
+    (preview
+      ? 'You are the lifter\'s strength coach. You just built today\'s workout and they are looking at it BEFORE ' +
+        'starting; they may want to change it. Be brief: '
+      : 'You are the lifter\'s strength coach, talking to them DURING a workout, between sets. Be brief: ') +
       'one to three short sentences, plain words, no emojis. Respond with ONLY strict minified JSON.',
     `Session and context (JSON): ${JSON.stringify(input)}`,
     '',
@@ -373,6 +378,10 @@ function livePrompt(input) {
       'weightLb is the per-dumbbell / stack / bar weight in lb; the app rounds it to what the equipment allows. ' +
       'Typical back-off is 10-20%. null leaves that value unchanged.',
     '- "sets": set the total working sets for an exercise (1-8), e.g. "cut this to 2 sets".',
+    '- "remove": drop an exercise for TODAY only (e.g. "no curls today", "skip that one"). If they would rather ' +
+      'still train that muscle, prefer "swap". Keep at least one exercise.',
+    '- Today-only vs forever: "not today" / "don\'t want X today" -> swap or remove only. "Never" / "I hate X" / ' +
+      '"stop giving me X" -> also "dislike" so it is never programmed again.',
     '- "dislike": they say they hate / never want an exercise: it is never programmed again. Usually pair with a swap.',
     '- "injury": something hurts. muscles from: chest, frontDelts, sideDelts, rearDelts, lats, upperBack, ' +
       'biceps, triceps, abs, obliques, quads, hamstrings, glutes, calves (the ones the painful joint/area loads). ' +

@@ -5,6 +5,7 @@
 	import { wt, KG_PER_LB } from '$lib/units.svelte';
 	import { MUSCLE_LABEL } from '$lib/coach/muscles';
 	import type { SessionPlan } from '$lib/server/today';
+	import CoachChat from '$lib/components/CoachChat.svelte';
 	let { data } = $props();
 
 	const ENERGY = ['Drained', 'Low', 'OK', 'Good', 'Great'];
@@ -19,6 +20,23 @@
 	let starting = $state(false);
 	let review = $state<'idle' | 'pending' | 'done' | 'failed'>('idle');
 	let reviewCtl: AbortController | null = null;
+
+	// Talk to the coach about the plan before starting; the chat carries into the workout.
+	type Msg = { role: 'user' | 'coach'; text: string; at: string; applied?: string[] };
+	let chat = $state<Msg[]>([]);
+	async function sendCoach(message: string) {
+		const r = await fetch('/api/coach/today/chat', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ plan, message, chat })
+		});
+		if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? 'Coach unavailable');
+		const out = (await r.json()) as { plan: SessionPlan; chat: Msg[] };
+		reviewCtl?.abort(); // the plan changed; an older review must not overwrite it
+		if (review === 'pending') review = 'idle';
+		plan = out.plan;
+		chat = out.chat;
+	}
 
 	const tileClass = (l: number) =>
 		l === 0 ? 'bg-panel text-zinc-200' : l === 1 ? 'bg-[#f5c518]/15 text-[#f5c518]' : 'bg-accent/15 text-accent';
@@ -169,7 +187,15 @@
 					{plan.totalSets} sets · about {plan.minutes} min{restingLine ? ` · resting: ${restingLine}` : ''}
 				</p>
 			</div>
-			<button aria-label="Back to check-in" onclick={() => { reviewCtl?.abort(); plan = null; review = 'idle'; }} class="text-zinc-500 hover:text-zinc-300"><X class="h-5 w-5" /></button>
+			<div class="flex shrink-0 items-center gap-3">
+				<CoachChat
+					{chat}
+					send={sendCoach}
+					intro="Want something different? Swap or drop an exercise, change a weight or the number of sets, or tell the coach about anything that hurts."
+					quick={['Swap an exercise', 'Not feeling legs today', 'Make it shorter', 'Something hurts']}
+				/>
+				<button aria-label="Back to check-in" onclick={() => { reviewCtl?.abort(); plan = null; review = 'idle'; chat = []; }} class="text-zinc-500 hover:text-zinc-300"><X class="h-5 w-5" /></button>
+			</div>
 		</header>
 
 		{#if plan.summary}
@@ -224,6 +250,7 @@
 
 		<form method="POST" action="?/start" onsubmit={() => { starting = true; reviewCtl?.abort(); }} class="mt-5">
 			<input type="hidden" name="plan" value={JSON.stringify(plan)} />
+			<input type="hidden" name="chat" value={JSON.stringify(chat)} />
 			<button
 				disabled={starting || !plan.exercises.length}
 				class="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 font-bold text-ink transition active:scale-[0.98] disabled:opacity-60"

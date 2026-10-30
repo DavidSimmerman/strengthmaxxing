@@ -34,6 +34,17 @@
 		return parts.join(' · ');
 	});
 
+	// Mid-workout chat: the server applies the coach's changes, then the page reloads its data.
+	async function sendCoach(message: string) {
+		const r = await fetch(`/api/sessions/${data.session.id}/coach`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ message })
+		});
+		if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? 'Coach unavailable');
+		await invalidateAll();
+	}
+
 	let prFlash = $state<string | null>(null);
 	let restNote = $state<string | null>(null);
 	function onLogged(sec: number, pr: number | null, note: string | null = null) {
@@ -120,7 +131,7 @@
 		<h1 class="truncate text-2xl font-black tracking-tight">{data.session.name}</h1>
 	</div>
 	<div class="flex shrink-0 items-center gap-3">
-		<CoachChat sessionId={data.session.id} chat={data.chat} />
+		<CoachChat chat={data.chat} send={sendCoach} />
 		<a href="/history" class="text-sm text-zinc-500 hover:text-zinc-300" aria-label="close"><X class="h-5 w-5" /></a>
 	</div>
 </header>

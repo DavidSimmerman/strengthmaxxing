@@ -7,7 +7,7 @@ import * as repo from './repo';
 import { callAgent, getProfile, saveProfile, type SessionSuggestions } from './coach';
 import { addInjury, hasEquipment, isMuscle, prescribeFor, type SessionPlan, type SessionPlanExercise } from './today';
 import { primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
-import { warmupsFor } from '$lib/coach/engine';
+import { sessionMinutes, warmupsFor } from '$lib/coach/engine';
 import { nextLb } from '$lib/equipment';
 
 const LB = 0.45359237;
@@ -16,6 +16,7 @@ type Action =
 	| { type: 'swap'; exercise: string; to: string }
 	| { type: 'adjust'; exercise: string; weightLb?: number | null; reps?: number | null }
 	| { type: 'sets'; exercise: string; sets: number }
+	| { type: 'remove'; exercise: string }
 	| { type: 'dislike'; exercise: string }
 	| { type: 'injury'; muscles: string[]; note: string };
 
@@ -171,6 +172,22 @@ export async function liveChat(sessionId: number, message: string) {
 				if (x) x.sets = sets;
 			}
 			applied.push(`${a.exercise}: ${sets} sets`);
+		} else if (a.type === 'remove') {
+			const id = idOf(a.exercise);
+			if (!id || !ids.includes(id)) continue;
+			const done = doneSets(id).length;
+			if (done) {
+				// Keep what was logged; just stop here.
+				items[id] = { ...(items[id] ?? { weightKg: 0, reps: 0, kind: 'hold', reason: '' }), sets: done };
+				if (planOut) {
+					const x = planOut.exercises.find((p) => p.exerciseId === id);
+					if (x) x.sets = done;
+				}
+			} else {
+				repo.removeSessionExercise(sessionId, id);
+				if (planOut) planOut.exercises = planOut.exercises.filter((p) => p.exerciseId !== id);
+			}
+			applied.push(`Removed for today: ${a.exercise}`);
 		} else if (a.type === 'dislike') {
 			const e = typeof a.exercise === 'string' ? byName.get(a.exercise) : undefined;
 			if (!e || disliked.has(e.name.toLowerCase())) continue;
@@ -185,10 +202,132 @@ export async function liveChat(sessionId: number, message: string) {
 		}
 	}
 
-	if (planOut) repo.setSessionPlan(sessionId, planOut as unknown as Record<string, unknown>);
+	if (planOut) {
+		dropLoneSupersets(planOut.exercises);
+		repo.setSessionPlan(sessionId, planOut as unknown as Record<string, unknown>);
+	}
 	repo.setSessionSuggestions(sessionId, { ...sug, status: sug.status === 'pending' ? 'pending' : 'ready', items });
 	const at = new Date().toISOString();
 	chat.push({ role: 'user', text: message.slice(0, 1000), at }, { role: 'coach', text: reply, at, applied });
 	repo.setSessionChat(sessionId, chat.slice(-40));
 	return { reply, applied };
+}
+
+/** A superset whose partner was removed is just a normal exercise again. */
+function dropLoneSupersets(xs: { supersetGroup: number | null; supersetWith?: boolean }[]) {
+	for (const x of xs)
+		if (x.supersetGroup != null && xs.filter((y) => y.supersetGroup === x.supersetGroup).length < 2) {
+			x.supersetGroup = null;
+			x.supersetWith = false;
+		}
+}
+
+type ChatMsg = { role: 'user' | 'coach'; text: string; at: string; applied?: string[] };
+
+/**
+ * The same coach chat on the workout preview, before Start: edits the not-yet-started plan
+ * (swap, remove for today, weight/reps, sets) and saves dislikes / pain like the live chat.
+ * Nothing is stored on a session yet; the page keeps the plan and the chat until Start.
+ */
+export async function previewChat(plan: SessionPlan, message: string, history: ChatMsg[]) {
+	const lib = repo.listExercises();
+	const byName = new Map(lib.map((e) => [e.name, e]));
+	const profile = getProfile();
+	const disliked = new Set((profile.dislikes ?? []).map((d) => d.toLowerCase()));
+	const out: SessionPlan = { ...plan, exercises: plan.exercises.filter((x) => byName.has(x.exercise)).map((x) => ({ ...x })) };
+	const names = () => new Set(out.exercises.map((x) => x.exercise));
+	const alternatives = Object.fromEntries(
+		out.exercises.map((x) => [
+			x.exercise,
+			lib
+				.filter((e) => !names().has(e.name) && !disliked.has(e.name.toLowerCase()))
+				.filter((e) => hasEquipment(e.name, e.category, profile.equipment ?? []))
+				.filter((e) => primaryMuscle(profileFor(e.name, e.muscle)) === x.forMuscle)
+				.map((e) => e.name)
+		])
+	);
+	const r = await callAgent('/live', {
+		message: message.slice(0, 1000),
+		stage: 'preview',
+		session: {
+			name: out.title,
+			checkIn: out.checkIn,
+			exercises: out.exercises.map((x) => ({
+				name: x.exercise,
+				equipment: x.category,
+				forMuscle: x.forMuscle,
+				targetSets: x.sets,
+				today: { weightLb: x.weightLb, reps: x.targetReps },
+				done: []
+			}))
+		},
+		alternatives,
+		profile: { avoid: profile.avoid, notes: profile.notes, dislikes: profile.dislikes },
+		recentChat: history.slice(-6).map((m) => ({ role: m.role, text: m.text }))
+	});
+	const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply.trim().slice(0, 800) : 'Done.';
+	const actions = (Array.isArray(r.actions) ? r.actions : []) as Action[];
+	const applied: string[] = [];
+	const find = (name: unknown) => out.exercises.findIndex((x) => x.exercise === name);
+
+	for (const a of actions.slice(0, 8)) {
+		if (a.type === 'swap') {
+			const i = find(a.exercise);
+			const to = typeof a.to === 'string' ? byName.get(a.to) : undefined;
+			if (i < 0 || !to || !alternatives[a.exercise]?.includes(to.name) || names().has(to.name)) continue;
+			const old = out.exercises[i];
+			const rx = prescribeFor(to, old.forMuscle, old.sets, out.checkIn);
+			out.exercises[i] = {
+				...old,
+				...rx,
+				sets: old.sets,
+				exercise: to.name,
+				exerciseId: to.id,
+				category: to.category,
+				warmups: old.warmups.length && rx.weightLb ? warmupsFor(to.category, rx.weightLb) : [],
+				reason: `Swapped in for ${a.exercise}. ${rx.reason}`
+			};
+			applied.push(`Swapped: ${a.exercise} → ${to.name}`);
+		} else if (a.type === 'remove') {
+			const i = find(a.exercise);
+			if (i < 0 || out.exercises.length <= 1) continue;
+			out.exercises.splice(i, 1);
+			applied.push(`Removed for today: ${a.exercise}`);
+		} else if (a.type === 'adjust') {
+			const x = out.exercises[find(a.exercise)];
+			if (!x) continue;
+			const lb = typeof a.weightLb === 'number' && a.weightLb >= 0 && a.weightLb < 1000 ? snapLb(x.category, a.weightLb) : null;
+			const reps = typeof a.reps === 'number' && a.reps >= 1 && a.reps <= 50 ? Math.round(a.reps) : null;
+			if (lb == null && reps == null) continue;
+			if (lb != null) {
+				x.kind = x.weightLb != null && lb < x.weightLb ? 'down' : x.weightLb != null && lb > x.weightLb ? 'up' : x.kind;
+				x.weightLb = lb;
+				if (x.warmups.length) x.warmups = warmupsFor(x.category, lb);
+			}
+			if (reps != null) x.targetReps = reps;
+			applied.push(`${x.exercise}: ${lb != null ? `${lb} lb` : ''}${lb != null && reps != null ? ' × ' : ''}${reps != null ? `${reps} reps` : ''}`);
+		} else if (a.type === 'sets') {
+			const x = out.exercises[find(a.exercise)];
+			if (!x || typeof a.sets !== 'number') continue;
+			x.sets = Math.max(1, Math.min(8, Math.round(a.sets)));
+			applied.push(`${x.exercise}: ${x.sets} sets`);
+		} else if (a.type === 'dislike') {
+			const e = typeof a.exercise === 'string' ? byName.get(a.exercise) : undefined;
+			if (!e || disliked.has(e.name.toLowerCase())) continue;
+			saveProfile({ dislikes: [...(getProfile().dislikes ?? []), e.name] });
+			disliked.add(e.name.toLowerCase());
+			applied.push(`${e.name} added to dislikes`);
+		} else if (a.type === 'injury') {
+			const muscles = (Array.isArray(a.muscles) ? a.muscles : []).filter(isMuscle);
+			if (!muscles.length) continue;
+			addInjury(muscles, typeof a.note === 'string' ? a.note : message);
+			applied.push(`Noted · ${muscles.length > 2 ? 'those muscles' : muscles.join(' and ')} kept lighter for 7 days`);
+		}
+	}
+	dropLoneSupersets(out.exercises);
+	out.totalSets = out.exercises.reduce((n, x) => n + x.sets, 0);
+	out.minutes = sessionMinutes(out.exercises);
+	const at = new Date().toISOString();
+	const chat: ChatMsg[] = [...history, { role: 'user', text: message.slice(0, 1000), at }, { role: 'coach', text: reply, at, applied }];
+	return { plan: out, reply, applied, chat: chat.slice(-40) };
 }

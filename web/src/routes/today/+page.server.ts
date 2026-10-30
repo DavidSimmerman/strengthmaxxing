@@ -56,6 +56,20 @@ export const actions: Actions = {
 			checkin: { energy: plan.checkIn.energy, soreness: plan.checkIn.soreness as Record<string, number> },
 			plan: plan as unknown as Record<string, unknown>
 		});
+		// The pre-start conversation with the coach continues in the workout's chat.
+		try {
+			const chat = JSON.parse(String(fd.get('chat') ?? '[]'));
+			if (Array.isArray(chat) && chat.length)
+				repo.setSessionChat(
+					s.id,
+					chat
+						.filter((m) => (m?.role === 'user' || m?.role === 'coach') && typeof m.text === 'string')
+						.slice(-40)
+						.map((m) => ({ role: m.role, text: String(m.text).slice(0, 1000), at: String(m.at ?? new Date().toISOString()), applied: Array.isArray(m.applied) ? m.applied.map(String) : undefined }))
+				);
+		} catch {
+			/* no chat */
+		}
 		repo.setSessionSuggestions(s.id, {
 			status: 'ready',
 			at: new Date().toISOString(),

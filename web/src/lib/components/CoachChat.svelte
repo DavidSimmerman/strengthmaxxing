@@ -1,14 +1,24 @@
 <script lang="ts">
 	/**
-	 * Talk to the coach mid-workout: "shoulder hurts", "swap this", "too heavy". The coach answers
-	 * in a line or two and can change the session (swaps, weight, sets, dislikes, pain notes);
-	 * what it changed is listed under its reply. A header button opens it as a bottom sheet.
+	 * Talk to the coach: "shoulder hurts", "swap this", "no curls today". The coach answers in a line
+	 * or two and can change the workout (swaps, removals, weight, sets, dislikes, pain notes); what
+	 * it changed is listed under its reply. A header button opens it as a bottom sheet. Used on the
+	 * workout preview (before Start) and during the workout; `send` does the request for each.
 	 */
 	import { MessageCircle, Send, X, RefreshCw } from '@lucide/svelte';
-	import { invalidateAll } from '$app/navigation';
-
 	type Msg = { role: 'user' | 'coach'; text: string; at: string; applied?: string[] };
-	let { sessionId, chat }: { sessionId: number; chat: Msg[] } = $props();
+	let {
+		chat,
+		send: post,
+		intro = 'Tell the coach anything: a weight feels off, something hurts, you want a different exercise.',
+		quick = ['Too heavy', 'Too easy', 'Swap this exercise', 'Something hurts', 'Cut it short today']
+	}: {
+		chat: Msg[];
+		/** Sends the message; resolves once `chat` includes the reply, throws on failure. */
+		send: (message: string) => Promise<void>;
+		intro?: string;
+		quick?: string[];
+	} = $props();
 
 	let open = $state(false);
 	let text = $state('');
@@ -16,7 +26,6 @@
 	let error = $state('');
 	let pendingUser = $state<string | null>(null);
 	let list: HTMLElement | undefined = $state();
-	const QUICK = ['Too heavy', 'Too easy', 'Swap this exercise', 'Something hurts', 'Cut it short today'];
 
 	$effect(() => {
 		void chat.length;
@@ -32,13 +41,7 @@
 		pendingUser = msg;
 		text = '';
 		try {
-			const r = await fetch(`/api/sessions/${sessionId}/coach`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ message: msg })
-			});
-			if (!r.ok) throw new Error((await r.json().catch(() => null))?.message ?? 'Coach unavailable');
-			await invalidateAll();
+			await post(msg);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Coach unavailable';
 			text = msg;
@@ -65,7 +68,7 @@
 		</div>
 		<div bind:this={list} class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-3 text-sm">
 			{#if !chat.length && !pendingUser}
-				<p class="text-zinc-500">Tell the coach anything: a weight feels off, something hurts, you want a different exercise.</p>
+				<p class="text-zinc-500">{intro}</p>
 			{/if}
 			{#each chat as m, i (i)}
 				{#if m.role === 'user'}
@@ -91,7 +94,7 @@
 		</div>
 		<div class="safe-bottom border-t border-line px-3 pb-3 pt-2">
 			<div class="mb-2 flex flex-wrap gap-1.5">
-				{#each QUICK as q (q)}
+				{#each quick as q (q)}
 					<button
 						type="button"
 						disabled={sending}
