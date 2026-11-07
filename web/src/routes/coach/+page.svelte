@@ -157,9 +157,11 @@
 		experience: 'intermediate',
 		...data.profile,
 		dislikes: [...(data.profile.dislikes ?? [])],
+		favorites: [...(data.profile.favorites ?? [])],
 		equipmentText: (data.profile.equipment ?? []).join(', ')
 	});
 	let dislikePick = $state('');
+	let favoritePick = $state('');
 	let savingProfile = $state(false);
 	async function saveProfile(e: SubmitEvent) {
 		e.preventDefault();
@@ -288,12 +290,39 @@
 						bind:value={dislikePick}
 						onchange={() => {
 							if (dislikePick && !p.dislikes!.includes(dislikePick)) p.dislikes = [...p.dislikes!, dislikePick];
+							p.favorites = p.favorites!.filter((f) => f !== dislikePick);
 							dislikePick = '';
 						}}
 						class={field}
 					>
 						<option value="">+ Add an exercise…</option>
 						{#each data.library.filter((n) => !p.dislikes!.includes(n)) as name (name)}<option value={name}>{name}</option>{/each}
+					</select>
+				</div>
+				<div class="flex flex-col gap-1 text-xs text-zinc-400 sm:col-span-2">
+					Favorites (picked most sessions; others still rotate in for variety)
+					{#if p.favorites?.length}
+						<div class="flex flex-wrap gap-1.5">
+							{#each p.favorites as name (name)}
+								<button
+									type="button"
+									onclick={() => (p.favorites = p.favorites!.filter((d) => d !== name))}
+									class="flex items-center gap-1 rounded-full bg-panel2 px-2.5 py-1 text-xs text-zinc-200 hover:text-red-400"
+									aria-label="Remove {name}">{name}<X class="h-3 w-3" /></button
+								>
+							{/each}
+						</div>
+					{/if}
+					<select
+						bind:value={favoritePick}
+						onchange={() => {
+							if (favoritePick && !p.favorites!.includes(favoritePick)) p.favorites = [...p.favorites!, favoritePick];
+							favoritePick = '';
+						}}
+						class={field}
+					>
+						<option value="">+ Add an exercise…</option>
+						{#each data.library.filter((n) => !p.favorites!.includes(n) && !p.dislikes!.includes(n)) as name (name)}<option value={name}>{name}</option>{/each}
 					</select>
 				</div>
 				<button disabled={savingProfile} class="rounded-xl bg-accent py-2.5 font-bold text-ink disabled:opacity-60 sm:col-span-2"

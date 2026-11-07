@@ -46,6 +46,24 @@ export const MUSCLE_LABEL: Record<Muscle, string> = {
 
 export const LEG_MUSCLES: readonly Muscle[] = ['quads', 'hamstrings', 'glutes', 'calves'];
 
+/** Body areas, for session titles and for training neighbours together (all of legs on one day). */
+export const MUSCLE_GROUP: Record<Muscle, string> = {
+	chest: 'Chest',
+	frontDelts: 'Shoulders',
+	sideDelts: 'Shoulders',
+	rearDelts: 'Shoulders',
+	lats: 'Back',
+	upperBack: 'Back',
+	biceps: 'Arms',
+	triceps: 'Arms',
+	abs: 'Core',
+	obliques: 'Core',
+	quads: 'Legs',
+	hamstrings: 'Legs',
+	glutes: 'Legs',
+	calves: 'Legs'
+};
+
 export type Pattern =
 	| 'hpush'
 	| 'vpush'

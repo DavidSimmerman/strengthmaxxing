@@ -5,7 +5,7 @@
  *
  * Research behind each number: https://plan.simmerman.cc/p/strengthmaxxing-dynamic-coach
  */
-import { MUSCLES, LEG_MUSCLES, profileFor, primaryMuscle, type Muscle, type ExerciseProfile } from './muscles.ts';
+import { MUSCLES, LEG_MUSCLES, MUSCLE_GROUP, profileFor, primaryMuscle, type Muscle, type ExerciseProfile } from './muscles.ts';
 import { nextLb } from '../equipment.ts';
 import { estimateSetSec } from '../rest.ts';
 
@@ -140,6 +140,8 @@ export type CheckIn = {
 	energy: number | null; // 1–5
 	soreness: Soreness;
 	minutes: number; // time available
+	/** Muscles the lifter doesn't want today ("not feeling legs"): their time goes to others. */
+	skip?: Muscle[];
 };
 
 export type MuscleDay = {
@@ -154,22 +156,76 @@ export type MuscleDay = {
 const SESSION_CAP: Record<Tier, number> = { grow: 8, build: 6, maintain: 4, athletic: 5 };
 /** Don't train a muscle below this readiness unless it's barely being touched. */
 const READY_MIN = 0.6;
+/**
+ * Days between sessions for a muscle. He trains every day, so the week is split rather than
+ * crammed: priority muscles every other day, the rest every third (2⅓×/week; Schoenfeld 2016:
+ * 2+ exposures a week; past that, weekly sets matter more than frequency — Pelland 2025).
+ */
+export const INTERVAL_DAYS: Record<Tier, number> = { grow: 2, build: 3, maintain: 3, athletic: 3 };
+/** Muscles ready this soon before they're due can join a neighbour that is due (legs together). */
+const PULL_FORWARD = 0.7;
+
+export const intervalDays = (m: Muscle, s: CoachSettings) => INTERVAL_DAYS[s.tiers[m]];
+/** Half a day of slack, so Monday evening → Wednesday lunch still counts as two days. */
+const dueAfterH = (m: Muscle, s: CoachSettings) => intervalDays(m, s) * 24 - 12;
+/** A day lighter than this gets topped up with the muscles closest to due. */
+const MIN_DAY_SETS = 10;
+/** …but never with a muscle less than ¾ of the way to due (nothing trained yesterday). */
+const TOP_UP_DUE = 0.75;
 
 /**
- * Which muscles today and how many sets each. Every day is assumed to be a training day: a
- * skipped day just leaves more need in the rolling 7-day window. Muscles are ranked by how far
- * behind their weekly target they are × priority × readiness; soreness trims or removes them.
+ * Hours since each muscle last had a real session (≥ 2.5 hard sets credited in one workout, so
+ * a 2-set top-up or a press's help to triceps doesn't reset the clock). Missing = not trained
+ * in the window.
+ */
+export function hoursSinceTrained(sets: LoggedSet[], now: Date): Partial<Record<Muscle, number>> {
+	const bySession = new Map<string, { at: Date; dose: Partial<Record<Muscle, number>> }>();
+	for (const st of sets) {
+		if (st.isWarmup || st.at > now) continue;
+		const k = String(st.sessionId ?? st.at.toISOString().slice(0, 10));
+		const b = bySession.get(k) ?? { at: st.at, dose: {} };
+		if (st.at > b.at) b.at = st.at;
+		for (const [m, c] of entries(profileFor(st.exercise, st.muscle).credits)) b.dose[m] = (b.dose[m] ?? 0) + c * effort(st.rir);
+		bySession.set(k, b);
+	}
+	const out: Partial<Record<Muscle, number>> = {};
+	for (const { at, dose } of bySession.values())
+		for (const [m, d] of entries(dose)) {
+			if (d < 2.5) continue;
+			const h = (now.getTime() - at.getTime()) / H;
+			if (out[m] == null || h < out[m]!) out[m] = h;
+		}
+	return out;
+}
+
+/**
+ * Which muscles today and how many sets each. Every day is a training day, so each muscle
+ * gets a full session's share (weekly target ÷ sessions a week) when it is due, and waits for
+ * a later day otherwise — no cramming the whole body into one day. A skipped day just leaves
+ * more muscles due. Ranked by how far behind × priority × readiness; soreness trims or removes.
+ * `sinceH` (hours since each muscle was last trained) turns on the due check; without it every
+ * muscle counts as due.
  */
 export function chooseMuscles(
 	vol: Record<Muscle, number>,
 	ready: Record<Muscle, number>,
 	checkIn: CheckIn,
-	s: CoachSettings
+	s: CoachSettings,
+	sinceH?: Partial<Record<Muscle, number>>
 ): MuscleDay[] {
 	const energyMult = checkIn.energy == null ? 1 : [0.6, 0.75, 0.9, 1, 1.1][clamp(checkIn.energy, 1, 5) - 1];
 	const prio: Record<Tier, number> = { grow: 1.3, build: 1, maintain: 0.7, athletic: 0.9 };
-	const rows: (MuscleDay & { score: number })[] = [];
+	const skip = new Set(checkIn.skip ?? []);
+	// How far into its gap each muscle is: 1 = due now.
+	const dueness = (m: Muscle) => {
+		const h = sinceH?.[m];
+		if (!sinceH || h == null) return 2;
+		return h / dueAfterH(m, s);
+	};
+	const candidates: (MuscleDay & { score: number; due: number })[] = [];
+	const extras: typeof candidates = []; // ready and nearly due, but the week's sets are already in
 	for (const m of MUSCLES) {
+		if (skip.has(m)) continue;
 		const target = weeklyTarget(m, s);
 		const need = Math.max(0, target - vol[m]);
 		const sore = checkIn.soreness[m] ?? 0;
@@ -177,20 +233,44 @@ export function chooseMuscles(
 		if (sore === 1) r = Math.min(r, 0.7);
 		if (sore === 2) r = 0;
 		if (sore === 1 && s.tiers[m] === 'athletic') r = 0; // runner: sore legs sit out, keep them for running
-		if (need < 1.5 || r < READY_MIN) continue;
-		// Spread the week over ~2–3 exposures, never above the per-session cap.
+		if (r < READY_MIN) continue;
 		const tier = s.tiers[m];
-		let sets = clamp(Math.round(Math.max(target / 2.5, Math.min(need, target / 2))), 2, SESSION_CAP[tier]);
+		if (need < 1.5) {
+			const due = dueness(m);
+			if (due >= TOP_UP_DUE)
+				extras.push({ muscle: m, sets: 2, readiness: r, need, reason: `on target this week, ${Math.round(r * 100)}% recovered: a light top-up`, due, score: 0 });
+			continue;
+		}
+		// One session's share of the week; a bit more when well behind, never above the cap.
+		const share = (target * intervalDays(m, s)) / 7;
+		let sets = clamp(Math.round(Math.min(need, need > share * 1.5 ? share + 1 : share)), 2, SESSION_CAP[tier]);
 		if (sore === 1) sets = Math.max(2, sets - 2);
 		sets = Math.max(2, Math.round(sets * Math.min(1, energyMult)));
+		const due = dueness(m);
 		const reason =
 			sore === 1
 				? `a bit sore, so ${sets} sets`
 				: `${round1(vol[m])} of ${target} sets this week, ${Math.round(r * 100)}% recovered`;
-		rows.push({ muscle: m, sets, readiness: r, need, reason, score: (need / target) * prio[tier] * r });
+		candidates.push({ muscle: m, sets, readiness: r, need, reason, due, score: (need / target) * prio[tier] * r * Math.min(2, due) });
 	}
+	// Due muscles, plus neighbours nearly due (so legs, back or arms train together).
+	const dueGroups = new Set(candidates.filter((c) => c.due >= 1).map((c) => MUSCLE_GROUP[c.muscle]));
+	const rows = candidates.filter((c) => c.due >= 1 || (c.due >= PULL_FORWARD && dueGroups.has(MUSCLE_GROUP[c.muscle])));
 	rows.sort((a, b) => b.score - a.score);
-	return rows.map(({ score: _s, ...r }) => r);
+	// Never an empty day: if little is due, bring forward what is closest to due.
+	const rest = [...candidates.filter((c) => !rows.includes(c) && c.due >= TOP_UP_DUE), ...extras].sort((a, b) => b.due - a.due);
+	while (rows.reduce((n, r) => n + r.sets, 0) < MIN_DAY_SETS && rest.length) rows.push(rest.shift()!);
+	return rows.map(({ score: _s, due: _d, ...r }) => r);
+}
+
+/** When a muscle that isn't due today comes round next, in words ("tomorrow", "in 2 days"). */
+export function nextDue(m: Muscle, s: CoachSettings, sinceH: Partial<Record<Muscle, number>>): string | null {
+	const h = sinceH[m];
+	if (h == null) return null;
+	const left = dueAfterH(m, s) - h;
+	if (left <= 0) return null;
+	const d = Math.max(1, Math.round(left / 24));
+	return d === 1 ? 'tomorrow' : `in ${d} days`;
 }
 
 // ---------- prescriptions ----------

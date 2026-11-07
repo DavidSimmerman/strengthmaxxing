@@ -35,6 +35,10 @@ createServer(async (req, res) => {
 		}
 		const skip = xs.find((x) => m.includes(`no ${x.name.toLowerCase()}`));
 		if (skip) actions.push({ type: 'remove', exercise: skip.name });
+		// "not feeling legs" → skip the leg muscles; "prefer X" → save X as a favourite.
+		if (m.includes('not feeling legs')) actions.push({ type: 'skip', muscles: ['quads', 'hamstrings', 'glutes', 'calves'] });
+		const fav = m.match(/prefer (.+?)(?: over |$)/);
+		if (fav) actions.push({ type: 'favorite', exercise: fav[1].replace(/\b\w/g, (c) => c.toUpperCase()) });
 		if (m.includes('hurt')) actions.push({ type: 'injury', muscles: ['frontDelts', 'nonsense'], note: b.message }, { type: 'sets', exercise: xs[0].name, sets: 2 });
 		return send({ reply: `Fake coach: ${actions.length} change(s).`, actions });
 	}

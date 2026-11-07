@@ -133,18 +133,18 @@ function cleanProfile(p: Record<string, unknown>): coach.CoachProfile {
 	out.notes = str(p.notes);
 	out.daysPerWeek = int(p.daysPerWeek, 1, 7);
 	out.sessionMin = int(p.sessionMin, 15, 180);
-	if (Array.isArray(p.dislikes)) {
-		// keep only real library names, in the library's spelling
-		const lib = new Map(repo.listExercises().map((e) => [e.name.toLowerCase().replace(/[^a-z0-9]/g, ''), e.name]));
-		out.dislikes = [
-			...new Set(
-				p.dislikes
-					.filter((e): e is string => typeof e === 'string')
-					.map((e) => lib.get(e.toLowerCase().replace(/[^a-z0-9]/g, '')))
-					.filter((e): e is string => !!e)
-			)
-		];
-	}
+	// keep only real library names, in the library's spelling
+	const lib = new Map(repo.listExercises().map((e) => [e.name.toLowerCase().replace(/[^a-z0-9]/g, ''), e.name]));
+	const names = (v: unknown[]) => [
+		...new Set(
+			v
+				.filter((e): e is string => typeof e === 'string')
+				.map((e) => lib.get(e.toLowerCase().replace(/[^a-z0-9]/g, '')))
+				.filter((e): e is string => !!e)
+		)
+	];
+	if (Array.isArray(p.dislikes)) out.dislikes = names(p.dislikes);
+	if (Array.isArray(p.favorites)) out.favorites = names(p.favorites).filter((n) => !out.dislikes?.includes(n));
 	if (Array.isArray(p.equipment)) out.equipment = p.equipment.filter((e): e is string => typeof e === 'string').slice(0, 20);
 	return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined)) as coach.CoachProfile;
 }

@@ -5,9 +5,9 @@
  */
 import * as repo from './repo';
 import { callAgent, getProfile, saveProfile, type SessionSuggestions } from './coach';
-import { addInjury, hasEquipment, isMuscle, prescribeFor, type SessionPlan, type SessionPlanExercise } from './today';
+import { addInjury, fillAfterSkip, hasEquipment, isMuscle, prescribeFor, retotal, type SessionPlan, type SessionPlanExercise } from './today';
 import { primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
-import { sessionMinutes, warmupsFor } from '$lib/coach/engine';
+import { warmupsFor } from '$lib/coach/engine';
 import { nextLb } from '$lib/equipment';
 
 const LB = 0.45359237;
@@ -18,7 +18,18 @@ type Action =
 	| { type: 'sets'; exercise: string; sets: number }
 	| { type: 'remove'; exercise: string }
 	| { type: 'dislike'; exercise: string }
+	| { type: 'favorite'; exercise: string }
+	| { type: 'skip'; muscles: string[] }
 	| { type: 'injury'; muscles: string[]; note: string };
+
+/** Save an exercise as a favourite (picked most sessions, others still rotate in). */
+function addFavorite(name: unknown, byName: Map<string, { name: string }>, applied: string[]) {
+	const e = typeof name === 'string' ? byName.get(name) : undefined;
+	const favs = getProfile().favorites ?? [];
+	if (!e || favs.includes(e.name)) return;
+	saveProfile({ favorites: [...favs, e.name] });
+	applied.push(`${e.name} saved as a favorite`);
+}
 
 /** The nearest weight this equipment can be set to. */
 function snapLb(category: string, lb: number) {
@@ -94,7 +105,7 @@ export async function liveChat(sessionId: number, message: string) {
 			})
 		},
 		alternatives,
-		profile: { avoid: profile.avoid, notes: profile.notes, dislikes: profile.dislikes },
+		profile: { avoid: profile.avoid, notes: profile.notes, dislikes: profile.dislikes, favorites: profile.favorites },
 		recentChat: chat.slice(-6).map((m) => ({ role: m.role, text: m.text }))
 	});
 
@@ -199,6 +210,50 @@ export async function liveChat(sessionId: number, message: string) {
 			if (!muscles.length) continue;
 			addInjury(muscles, typeof a.note === 'string' ? a.note : message);
 			applied.push(`Noted · ${muscles.length > 2 ? 'those muscles' : muscles.join(' and ')} kept lighter for 7 days`);
+		} else if (a.type === 'favorite') {
+			addFavorite(a.exercise, byName, applied);
+		} else if (a.type === 'skip') {
+			const skip = new Set((Array.isArray(a.muscles) ? a.muscles : []).filter(isMuscle));
+			if (!skip.size) continue;
+			// Stop the skipped muscles' exercises (keeping logged sets)…
+			const dropped: string[] = [];
+			for (const id of [...ids]) {
+				if (!skip.has(forMuscle(id))) continue;
+				const done = doneSets(id).length;
+				if (done >= targetSets(id)) continue;
+				const name = byId.get(id)!.name;
+				if (done) {
+					items[id] = { ...(items[id] ?? { weightKg: 0, reps: 0, kind: 'hold', reason: '' }), sets: done };
+					if (planOut) {
+						const x = planOut.exercises.find((p) => p.exerciseId === id);
+						if (x) x.sets = done;
+					}
+				} else {
+					repo.removeSessionExercise(sessionId, id);
+					if (planOut) planOut.exercises = planOut.exercises.filter((p) => p.exerciseId !== id);
+					ids.splice(ids.indexOf(id), 1);
+				}
+				dropped.push(name);
+			}
+			if (dropped.length) applied.push(`Skipped for today: ${dropped.join(', ')}`);
+			// …and give their time to other muscles (only on coach-built sessions, which have a plan).
+			if (planOut) {
+				const checkIn = { ...planOut.checkIn, skip: [...new Set([...(planOut.checkIn.skip ?? []), ...skip])] };
+				planOut.checkIn = checkIn;
+				const { added, grown } = await fillAfterSkip(planOut.exercises, checkIn, planOut.checkIn.minutes, removed, (x) => doneSets(x.exerciseId).length < x.sets);
+				for (const name of grown) {
+					const x = planOut.exercises.find((p) => p.exercise === name)!;
+					if (items[x.exerciseId]) items[x.exerciseId] = { ...items[x.exerciseId], sets: x.sets };
+				}
+				if (grown.length) applied.push(`Extra sets: ${grown.join(', ')}`);
+				for (const x of added) {
+					planOut.exercises.push(x);
+					ids.push(x.exerciseId);
+					items[x.exerciseId] = { weightKg: (x.weightLb ?? 0) * LB, reps: x.targetReps, kind: x.kind === 'new' ? 'hold' : x.kind, reason: x.reason };
+				}
+				if (added.length) applied.push(`Added instead: ${added.map((x) => x.exercise).join(', ')}`);
+				planOut = retotal(planOut);
+			}
 		}
 	}
 
@@ -262,7 +317,7 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 			}))
 		},
 		alternatives,
-		profile: { avoid: profile.avoid, notes: profile.notes, dislikes: profile.dislikes },
+		profile: { avoid: profile.avoid, notes: profile.notes, dislikes: profile.dislikes, favorites: profile.favorites },
 		recentChat: history.slice(-6).map((m) => ({ role: m.role, text: m.text }))
 	});
 	const reply = typeof r.reply === 'string' && r.reply.trim() ? r.reply.trim().slice(0, 800) : 'Done.';
@@ -322,11 +377,24 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 			if (!muscles.length) continue;
 			addInjury(muscles, typeof a.note === 'string' ? a.note : message);
 			applied.push(`Noted · ${muscles.length > 2 ? 'those muscles' : muscles.join(' and ')} kept lighter for 7 days`);
+		} else if (a.type === 'favorite') {
+			addFavorite(a.exercise, byName, applied);
+		} else if (a.type === 'skip') {
+			const skip = new Set((Array.isArray(a.muscles) ? a.muscles : []).filter(isMuscle));
+			if (!skip.size) continue;
+			const dropped = out.exercises.filter((x) => skip.has(x.forMuscle)).map((x) => x.exercise);
+			out.exercises = out.exercises.filter((x) => !skip.has(x.forMuscle));
+			out.checkIn = { ...out.checkIn, skip: [...new Set([...(out.checkIn.skip ?? []), ...skip])] };
+			if (dropped.length) applied.push(`Skipped for today: ${dropped.join(', ')}`);
+			const { added, grown } = await fillAfterSkip(out.exercises, out.checkIn, out.checkIn.minutes);
+			out.exercises.push(...added);
+			if (grown.length) applied.push(`Extra sets: ${grown.join(', ')}`);
+			out.resting = [...out.resting.filter((r) => !skip.has(r.muscle)), ...[...skip].map((m) => ({ muscle: m, why: 'skipped today' }))];
+			if (added.length) applied.push(`Added instead: ${added.map((x) => x.exercise).join(', ')}`);
 		}
 	}
 	dropLoneSupersets(out.exercises);
-	out.totalSets = out.exercises.reduce((n, x) => n + x.sets, 0);
-	out.minutes = sessionMinutes(out.exercises);
+	Object.assign(out, retotal(out));
 	const at = new Date().toISOString();
 	const chat: ChatMsg[] = [...history, { role: 'user', text: message.slice(0, 1000), at }, { role: 'coach', text: reply, at, applied }];
 	return { plan: out, reply, applied, chat: chat.slice(-40) };

@@ -25,6 +25,7 @@ export type CoachProfile = {
 	equipment?: string[];
 	avoid?: string; // injuries / exercises to avoid, free text
 	dislikes?: string[]; // exercise names the coach must never program
+	favorites?: string[]; // exercise names the lifter prefers: picked most sessions, others rotate in
 	notes?: string; // anything else, free text
 };
 

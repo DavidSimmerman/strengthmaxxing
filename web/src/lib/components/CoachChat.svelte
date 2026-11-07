@@ -113,7 +113,7 @@
 				<input
 					bind:value={text}
 					placeholder="Tell the coach…"
-					class="min-w-0 flex-1 bg-transparent text-sm text-zinc-100 outline-none placeholder:text-zinc-500"
+					class="min-w-0 flex-1 bg-transparent text-base text-zinc-100 outline-none placeholder:text-zinc-500"
 				/>
 				<button disabled={sending || !text.trim()} aria-label="Send" class="text-accent disabled:opacity-40"><Send class="h-4 w-4" /></button>
 			</form>

@@ -172,7 +172,7 @@ function planPrompt(input) {
   const schema =
     '{"requirements":[string],' +
     '"profile":{"goal"?:string,"daysPerWeek"?:number,"sessionMin"?:number,"experience"?:string,' +
-    '"equipment"?:[string],"avoid"?:string,"dislikes"?:[string],"notes"?:string},' +
+    '"equipment"?:[string],"avoid"?:string,"dislikes"?:[string],"favorites"?:[string],"notes"?:string},' +
     '"workoutEdit":{"workoutId":number,"exercises":[{"name":string,"sets":number,"reps":number,"restSec":number,"weightKg":number|null,"perSide":boolean}]}|null,' +
     '"plan":null|{"name":string,"weeks":number|null,"deloadWeek":number|null,"progression":string,' +
     '"days":[{"name":string,"dayOfWeek":"Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"|null,"estMinutes":number,' +
@@ -241,7 +241,8 @@ function planPrompt(input) {
       'daysPerWeek (7 = every day), sessionMin (their MAXIMUM session minutes), goal, experience, ' +
       'equipment, avoid (injuries to work around), dislikes (exercise names from the library they said ' +
       'they dislike or never want; return the COMPLETE list including ones already saved, and remove one ' +
-      'only if they say they are OK with it again), notes (other standing preferences in one or two ' +
+      'only if they say they are OK with it again), favorites (exercise names from the library they said they ' +
+      'like or prefer over another; same complete-list rule), notes (other standing preferences in one or two ' +
       'short sentences, e.g. "2-3 hard sets per exercise; likes variety; runs a lot, keep legs light"). ' +
       'Include only what you know.',
     `Write every weight in prose ("progression", "rationale", "reply") in ${input.units === 'kg' ? 'kg' : 'pounds (lb), never kg'}. ` +
@@ -328,11 +329,13 @@ function reviewPrompt(input) {
       'change sets, reps, weights or rest.',
     `Inputs (JSON): ${JSON.stringify(input)}`,
     '',
-    '1. Exercise choice. For each exercise you MAY swap it for one name from alternatives[exerciseName] ' +
-      '(same muscle, equipment they own) when that is clearly better for them today: profile.avoid / notes ' +
-      '(injuries, "legs light because I run"), a joint likely to be irritated, or a much better stretch-position ' +
-      'option. Prefer keeping exercises they have history on (engineReason mentions last time) so progress stays ' +
-      'trackable. Most days: no swaps. swapTo must be null or an exact name from that list.',
+    '1. Exercise choice. The engine already rotates exercises for variety (nothing repeats back to back) and ' +
+      'favours profile.favorites (about two sessions in three). They train every day, so muscles not in today\'s ' +
+      'session are planned for coming days; do not try to cover the whole body. For each exercise you MAY swap it ' +
+      'for one name from alternatives[exerciseName] (same muscle, equipment they own) when that is clearly better ' +
+      'for them today: profile.avoid / notes (injuries, "legs light because I run"), a joint likely to be irritated. ' +
+      'Never swap a favorite away, and never swap just to return to the exercise they did last time. Most days: no ' +
+      'swaps. swapTo must be null or an exact name from that list.',
     '2. "reason": ONE short sentence per exercise, in plain words, saying why it is in today\'s session and why ' +
       'this weight/reps. Use engineReason\'s facts (last time, weekly sets, recovery, soreness) - never invent ' +
       'numbers. If you swapped, say why. e.g. "Chest is your top priority and fresh; you hit 10 on every set at 135, ' +
@@ -360,6 +363,8 @@ function livePrompt(input) {
     '{"type":"sets","exercise":string,"sets":number}|' +
     '{"type":"remove","exercise":string}|' +
     '{"type":"dislike","exercise":string}|' +
+    '{"type":"favorite","exercise":string}|' +
+    '{"type":"skip","muscles":[string]}|' +
     '{"type":"injury","muscles":[string],"note":string}]}';
   const preview = input.stage === 'preview';
   return [
@@ -378,15 +383,28 @@ function livePrompt(input) {
       'weightLb is the per-dumbbell / stack / bar weight in lb; the app rounds it to what the equipment allows. ' +
       'Typical back-off is 10-20%. null leaves that value unchanged.',
     '- "sets": set the total working sets for an exercise (1-8), e.g. "cut this to 2 sets".',
-    '- "remove": drop an exercise for TODAY only (e.g. "no curls today", "skip that one"). If they would rather ' +
-      'still train that muscle, prefer "swap". Keep at least one exercise.',
-    '- Today-only vs forever: "not today" / "don\'t want X today" -> swap or remove only. "Never" / "I hate X" / ' +
+    '- "remove": drop ONE exercise for TODAY only (e.g. "skip that one"). If they would rather still train that ' +
+      'muscle, prefer "swap". Keep at least one exercise.',
+    '- "skip": they don\'t want to train a body area today ("not feeling legs", "no arms today", "skip chest"). ' +
+      'muscles = every muscle of that area from: chest, frontDelts, sideDelts, rearDelts, lats, upperBack, biceps, ' +
+      'triceps, abs, obliques, quads, hamstrings, glutes, calves (legs = quads, hamstrings, glutes, calves; arms = ' +
+      'biceps, triceps; core = abs, obliques; back = lats, upperBack; shoulders = frontDelts, sideDelts, rearDelts). ' +
+      'The app removes that area AND fills the freed time with other muscles that are due, so the session stays ' +
+      'about as long. Use "skip" (not "remove") whenever they talk about an area rather than one exercise, unless ' +
+      'they say they want a shorter session.',
+    '- "favorite": they say they like or prefer an exercise ("I like Smith bench more than DB bench", "more of ' +
+      'X"). Save the one they prefer. It is then picked most sessions, with the others still rotated in for ' +
+      'variety (so do NOT dislike the one they like less). If the less-liked one is in today\'s session and they ' +
+      'want it now, also swap.',
+    '- Today-only vs forever: "not today" / "don\'t want X today" -> swap, remove or skip only. "Never" / "I hate X" / ' +
       '"stop giving me X" -> also "dislike" so it is never programmed again.',
     '- "dislike": they say they hate / never want an exercise: it is never programmed again. Usually pair with a swap.',
     '- "injury": something hurts. muscles from: chest, frontDelts, sideDelts, rearDelts, lats, upperBack, ' +
       'biceps, triceps, abs, obliques, quads, hamstrings, glutes, calves (the ones the painful joint/area loads). ' +
       'The app keeps those lighter for 7 days. Sharp pain or pain that changes how they move: tell them to stop ' +
       'that exercise and not push through; suggest getting it checked if it persists. You are not a doctor.',
+    'They train every day: the coach spreads muscles across the week, so what is not in today\'s session ' +
+      'comes on a coming day. Exercises rotate for variety; profile.favorites come up most often.',
     'Questions (form cues, why this exercise, how long to rest) need no actions: just answer.',
     'Exercise names in actions must exactly match names in session.exercises.',
     `Output ONLY minified JSON of this shape: ${schema}`,

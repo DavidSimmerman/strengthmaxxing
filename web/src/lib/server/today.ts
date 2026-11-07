@@ -6,11 +6,12 @@
 import { and, eq, gte } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { exercises, sessions, sessionSets } from '$lib/db/schema';
-import { buildDay, type DayPlan, type PlannedExercise } from '$lib/coach/build';
+import { buildDay, titleFor, type DayPlan, type PlannedExercise } from '$lib/coach/build';
 import {
 	DAVID_TIERS,
 	prescribe,
 	readiness,
+	sessionMinutes,
 	warmupsFor,
 	type Activity,
 	type CheckIn,
@@ -88,6 +89,7 @@ export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = n
 			.filter((e) => hasEquipment(e.name, e.category, profile.equipment ?? []))
 			.map((e) => ({ name: e.name, muscle: e.muscle, category: e.category })),
 		dislikes: profile.dislikes,
+		favorites: profile.favorites,
 		checkIn,
 		settings: coachSettings(cuttingHint)
 	});
@@ -282,6 +284,63 @@ export function prescribeFor(
 		energy: checkIn.energy,
 		sore: (checkIn.soreness[forMuscle] ?? 0) as 0 | 1 | 2
 	});
+}
+
+/**
+ * "Not feeling legs": the lifter drops some muscles for today. Rather than just deleting their
+ * exercises, rebuild today without them and fill the freed time with other muscles' work: new
+ * muscles first, then extra sets (up to 4) on what's already there. `kept` is what stays
+ * (already without the skipped muscles); returns the exercises to add and bumps `sets` on
+ * kept exercises in place (only those `canGrow` allows, e.g. not ones already finished).
+ */
+export async function fillAfterSkip(
+	kept: SessionPlanExercise[],
+	checkIn: CheckIn,
+	budgetMin: number,
+	hidden: Set<number> = new Set(),
+	canGrow: (x: SessionPlanExercise) => boolean = () => true
+): Promise<{ added: SessionPlanExercise[]; grown: string[] }> {
+	const rebuilt = toSessionPlan(await planTodayLive(checkIn), checkIn);
+	const names = new Set(kept.map((x) => x.exercise));
+	const covered = new Set(kept.map((x) => x.forMuscle));
+	const added: SessionPlanExercise[] = [];
+	for (const x of rebuilt.exercises) {
+		if (names.has(x.exercise) || covered.has(x.forMuscle) || hidden.has(x.exerciseId) || x.exerciseId == null) continue;
+		const cand = { ...x, warmups: [], supersetGroup: null, supersetWith: false };
+		if (sessionMinutes([...kept, ...added, cand]) > budgetMin) continue;
+		added.push(cand);
+	}
+	// Priority muscles first (the rebuilt plan's order), one set at a time, round-robin.
+	const order = new Map(rebuilt.muscles.map((m, i) => [m.muscle, i]));
+	const growable = kept.filter(canGrow).sort((a, b) => (order.get(a.forMuscle) ?? 99) - (order.get(b.forMuscle) ?? 99));
+	const grown = new Set<string>();
+	for (let more = true; more; ) {
+		more = false;
+		for (const x of growable) {
+			if (x.sets >= 4) continue;
+			x.sets++;
+			if (sessionMinutes([...kept, ...added]) > budgetMin) {
+				x.sets--;
+				continue;
+			}
+			grown.add(x.exercise);
+			more = true;
+		}
+	}
+	return { added, grown: [...grown] };
+}
+
+/** Plan totals after exercises were added or removed; core work stays last. */
+export function retotal(plan: SessionPlan): SessionPlan {
+	const core = (x: SessionPlanExercise) => (profileFor(x.exercise).pattern === 'core' ? 1 : 0);
+	const exercises = [...plan.exercises].sort((a, b) => core(a) - core(b));
+	return {
+		...plan,
+		exercises,
+		title: titleFor(exercises),
+		totalSets: exercises.reduce((n, x) => n + x.sets, 0),
+		minutes: sessionMinutes(exercises)
+	};
 }
 
 export type Injury = { muscles: Muscle[]; note: string; until: string };

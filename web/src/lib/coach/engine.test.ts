@@ -9,11 +9,12 @@ import {
 	prescribe,
 	readiness,
 	weeklyVolume,
+	type CheckIn,
 	type CoachSettings,
 	type LoggedSet
 } from './engine.ts';
 import { buildDay, type LibraryExercise } from './build.ts';
-import { PROFILES, profileFor } from './muscles.ts';
+import { MUSCLE_GROUP, PROFILES, profileFor } from './muscles.ts';
 
 const LB = 0.45359237;
 const NOW = new Date('2026-10-27T16:00:00Z');
@@ -196,4 +197,66 @@ test('arms and side delts get isolations, chest gets a compound', () => {
 	const names = plan.exercises.map((x) => x.exercise);
 	assert.ok(!names.includes('Upright Row') && !names.includes('Close-Grip Bench Press'), names.join(', '));
 	assert.ok(profileFor(plan.exercises.find((x) => x.forMuscle === 'chest')!.exercise).compound);
+});
+
+// Two weeks of training every day, logging exactly what the coach planned.
+function simulate(days: number, favorites: string[] = [], skipOn: Record<number, CheckIn['skip']> = {}) {
+	const lib = [
+		...LIB,
+		['Smith Machine Bench Press', 'chest', 'smith machine'],
+		['Dumbbell Bench Press', 'chest', 'dumbbell'],
+		['Lateral Raise', 'shoulders', 'dumbbell'],
+		['Bicep Curl', 'biceps', 'dumbbell'],
+		['Rear Delt Fly', 'shoulders', 'dumbbell'],
+		['Dumbbell Row', 'back', 'dumbbell']
+	].map((x) => (Array.isArray(x) ? { name: x[0], muscle: x[1], category: x[2] } : x));
+	const log: LoggedSet[] = [];
+	const plans = [];
+	for (let d = 0; d < days; d++) {
+		const now = new Date(NOW.getTime() + d * 864e5);
+		const plan = buildDay({ now, sets: log, activities: [], library: lib, favorites, checkIn: { energy: 4, soreness: {}, minutes: 45, skip: skipOn[d] }, settings: S });
+		for (const x of plan.exercises)
+			for (let i = 0; i < x.sets; i++) log.push({ at: new Date(now.getTime() + i * 60_000), exercise: x.exercise, reps: x.targetReps, weightKg: (x.weightLb ?? 50) * LB, rir: 1, sessionId: 100 + d });
+		plans.push(plan);
+	}
+	return plans;
+}
+
+test('every day is a training day: sessions focus on a few areas, not the whole body', () => {
+	const plans = simulate(14);
+	for (const [i, p] of plans.entries()) console.log(`  day ${i + 1}: ${p.title} · ${p.totalSets} sets · ${p.minutes} min — ${p.exercises.map((x) => `${x.exercise} ${x.sets}`).join(', ')}`);
+	const groups = (p: (typeof plans)[number]) => new Set(p.exercises.map((x) => MUSCLE_GROUP[x.forMuscle])).size;
+	// After the first couple of days the week is spread out: at most 3 areas a day on average.
+	const later = plans.slice(3);
+	assert.ok(later.reduce((n, p) => n + groups(p), 0) / later.length <= 3.2, later.map(groups).join(','));
+	// Chest is never trained on back-to-back days.
+	const chestDays = plans.map((p, i) => (p.exercises.some((x) => x.forMuscle === 'chest') ? i : -1)).filter((i) => i >= 0);
+	assert.ok(chestDays.every((d, i) => i === 0 || d - chestDays[i - 1] >= 2), chestDays.join(','));
+	// Every priority muscle still gets its week in (averaged over the second week's rolling windows).
+	for (const m of ['chest', 'biceps', 'triceps', 'sideDelts', 'abs'] as const) {
+		const ws = plans.slice(7).map((p) => p.week.find((x) => x.muscle === m)!);
+		const avg = ws.reduce((n, w) => n + w.done, 0) / ws.length;
+		assert.ok(avg >= ws[0].target * 0.75, `${m}: ${avg.toFixed(1)} of ${ws[0].target}`);
+	}
+});
+
+test('exercises rotate; a favourite gets most sessions but not all', () => {
+	const chestLead = (plans: ReturnType<typeof simulate>) =>
+		plans.map((p) => p.exercises.find((x) => x.forMuscle === 'chest' && profileFor(x.exercise).compound)?.exercise).filter(Boolean);
+	const plain = chestLead(simulate(21));
+	assert.ok(plain.every((x, i) => i === 0 || x !== plain[i - 1]), `no back-to-back repeats: ${plain.join(', ')}`);
+	const fav = chestLead(simulate(21, ['Smith Machine Bench Press']));
+	const share = fav.filter((x) => x === 'Smith Machine Bench Press').length / fav.length;
+	console.log(`  chest with a favourite: ${fav.join(', ')}`);
+	assert.ok(share >= 0.55 && share < 1, `favourite share ${share}`);
+});
+
+test('skipping legs moves the time to other muscles instead of shortening the day', () => {
+	const now = NOW;
+	const base = { now, sets: [], activities: [], library: LIB, settings: S };
+	const full = buildDay({ ...base, checkIn: { energy: 4, soreness: {}, minutes: 45 } });
+	const noLegs = buildDay({ ...base, checkIn: { energy: 4, soreness: {}, minutes: 45, skip: ['quads', 'hamstrings', 'glutes', 'calves'] } });
+	assert.ok(!noLegs.exercises.some((x) => ['quads', 'hamstrings', 'glutes', 'calves'].includes(x.forMuscle)));
+	assert.ok(noLegs.minutes >= full.minutes - 6, `${noLegs.minutes} vs ${full.minutes} min`);
+	assert.ok(noLegs.resting.some((r) => r.muscle === 'quads' && r.why === 'skipped today'));
 });
