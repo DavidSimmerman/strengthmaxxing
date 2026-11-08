@@ -57,7 +57,7 @@
 				o.type = 'square';
 				const t = c.currentTime + at;
 				g.gain.setValueAtTime(0.001, t);
-				g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+				g.gain.exponentialRampToValueAtTime(0.7, t + 0.02);
 				g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
 				o.start(t);
 				o.stop(t + 0.16);

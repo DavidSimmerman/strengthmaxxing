@@ -105,3 +105,6 @@ export function supersetLabel(g: number | null | undefined): string | null {
 	if (g == null) return null;
 	return String.fromCharCode(65 + (g % 26));
 }
+
+/** "arm" or "leg" for a one-side-at-a-time exercise, from its muscle. */
+export const sideWord = (muscle: string) => (/quad|ham|glute|calf|calves|leg/i.test(muscle) ? 'leg' : 'arm');

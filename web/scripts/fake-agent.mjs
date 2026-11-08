@@ -39,6 +39,9 @@ createServer(async (req, res) => {
 		if (m.includes('not feeling legs')) actions.push({ type: 'skip', muscles: ['quads', 'hamstrings', 'glutes', 'calves'] });
 		const fav = m.match(/prefer (.+?)(?: over |$)/);
 		if (fav) actions.push({ type: 'favorite', exercise: fav[1].replace(/\b\w/g, (c) => c.toUpperCase()) });
+		// "single arm" → a one-arm dumbbell preacher curl replaces the session's biceps exercise.
+		const bi = xs.find((x) => x.forMuscle === 'biceps');
+		if (m.includes('single arm') && bi) actions.push({ type: 'create', name: 'Single-Arm Dumbbell Preacher Curl', basedOn: 'Preacher Curl', equipment: 'dumbbell', perSide: true, replace: bi.name });
 		if (m.includes('hurt')) actions.push({ type: 'injury', muscles: ['frontDelts', 'nonsense'], note: b.message }, { type: 'sets', exercise: xs[0].name, sets: 2 });
 		return send({ reply: `Fake coach: ${actions.length} change(s).`, actions });
 	}

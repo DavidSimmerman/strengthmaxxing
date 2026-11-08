@@ -23,11 +23,13 @@ import {
 	type Prescription
 } from './engine.ts';
 
-export type LibraryExercise = { name: string; muscle: string; category: string };
+export type LibraryExercise = { name: string; muscle: string; category: string; perSide?: boolean };
 
 export type PlannedExercise = Prescription & {
 	category: string;
 	forMuscle: Muscle;
+	/** One arm / leg at a time: reps and weight are per side. */
+	perSide: boolean;
 	supersetGroup: number | null;
 	supersetWith?: boolean;
 };
@@ -52,6 +54,8 @@ export type BuildInput = {
 	favorites?: string[];
 	checkIn: CheckIn;
 	settings: CoachSettings;
+	/** For estimating a first weight when nothing has been logged yet. */
+	bodyweightKg?: number | null;
 	/** Most minutes worth spending even when more is available. */
 	maxUsefulMinutes?: number;
 };
@@ -99,9 +103,12 @@ export function buildDay(input: BuildInput): DayPlan {
 			category: pick.category,
 			tier: settings.tiers[md.muscle],
 			energy: checkIn.energy,
-			sore
+			sore,
+			sets,
+			bodyweightKg: input.bodyweightKg
 		});
-		const cand: PlannedExercise = { ...rx, category: pick.category, forMuscle: md.muscle, supersetGroup: null };
+		const perSide = !!(pick.perSide ?? profileFor(pick.name, pick.muscle).perSide);
+		const cand: PlannedExercise = { ...rx, category: pick.category, forMuscle: md.muscle, perSide, supersetGroup: null };
 		for (let k = take; k >= 2; k--) {
 			cand.sets = k;
 			if (!fits([...chosen, cand])) continue;

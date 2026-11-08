@@ -3,7 +3,7 @@
  * the DB and hands them to the pure engine in $lib/coach. Runs from Apple Health arrive later
  * via healthmaxxing; until then `activities` is empty.
  */
-import { and, eq, gte } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull } from 'drizzle-orm';
 import { db } from '$lib/db';
 import { exercises, sessions, sessionSets } from '$lib/db/schema';
 import { buildDay, titleFor, type DayPlan, type PlannedExercise } from '$lib/coach/build';
@@ -87,7 +87,8 @@ export function planToday(checkIn: CheckIn, activities: Activity[] = [], now = n
 		library: repo
 			.listExercises()
 			.filter((e) => hasEquipment(e.name, e.category, profile.equipment ?? []))
-			.map((e) => ({ name: e.name, muscle: e.muscle, category: e.category })),
+			.map((e) => ({ name: e.name, muscle: e.muscle, category: e.category, perSide: isPerSide(e) })),
+		bodyweightKg: latestBodyweightKg(),
 		dislikes: profile.dislikes,
 		favorites: profile.favorites,
 		checkIn,
@@ -263,9 +264,11 @@ export async function reviewPlan(plan: SessionPlan): Promise<SessionPlan> {
 			category: swap.category,
 			tier: coachSettings().tiers[x.forMuscle],
 			energy: plan.checkIn.energy,
-			sore: (plan.checkIn.soreness[x.forMuscle] ?? 0) as 0 | 1 | 2
+			sore: (plan.checkIn.soreness[x.forMuscle] ?? 0) as 0 | 1 | 2,
+			sets,
+			bodyweightKg: latestBodyweightKg()
 		});
-		return { ...x, ...rx, sets: x.sets, warmups: x.warmups.length && rx.weightLb ? warmupsFor(swap.category, rx.weightLb) : [], exercise: swap.name, exerciseId: swap.id, category: swap.category, reason };
+		return { ...x, ...rx, perSide: isPerSide(swap), sets: x.sets, warmups: x.warmups.length && rx.weightLb ? warmupsFor(swap.category, rx.weightLb) : [], exercise: swap.name, exerciseId: swap.id, category: swap.category, reason };
 	});
 	const summary = typeof r.summary === 'string' ? r.summary.slice(0, 400) : null;
 	return { ...plan, exercises: out, summary, reviewed: true };
@@ -278,12 +281,36 @@ export function prescribeFor(
 	sets: number,
 	checkIn: Pick<CheckIn, 'energy' | 'soreness'>
 ) {
-	return prescribe(ex.name, ex.muscle, sets, historyOf(recentSets(), ex.name), {
-		category: ex.category,
-		tier: coachSettings().tiers[forMuscle],
-		energy: checkIn.energy,
-		sore: (checkIn.soreness[forMuscle] ?? 0) as 0 | 1 | 2
-	});
+	const all = recentSets();
+	return {
+		...prescribe(ex.name, ex.muscle, sets, historyOf(all, ex.name), {
+			category: ex.category,
+			tier: coachSettings().tiers[forMuscle],
+			energy: checkIn.energy,
+			sore: (checkIn.soreness[forMuscle] ?? 0) as 0 | 1 | 2,
+			sets: all,
+			bodyweightKg: latestBodyweightKg()
+		}),
+		perSide: isPerSide(ex as { name: string; muscle: string; perSide?: boolean })
+	};
+}
+
+/** One arm / leg at a time: a custom exercise says so itself; library ones from their profile. */
+export function isPerSide(e: { name: string; muscle: string; perSide?: boolean | null }) {
+	return !!e.perSide || !!profileFor(e.name, e.muscle).perSide;
+}
+
+/** The last bodyweight a session recorded (for first-weight estimates when nothing is logged). */
+function latestBodyweightKg(): number | null {
+	return (
+		db
+			.select({ bw: sessions.bodyweightKg })
+			.from(sessions)
+			.where(isNotNull(sessions.bodyweightKg))
+			.orderBy(desc(sessions.startedAt))
+			.limit(1)
+			.get()?.bw ?? null
+	);
 }
 
 /**

@@ -5,6 +5,7 @@ import {
 	DAVID_TIERS,
 	afterSet,
 	chooseMuscles,
+	estimateStart,
 	learnTau,
 	prescribe,
 	readiness,
@@ -14,7 +15,7 @@ import {
 	type LoggedSet
 } from './engine.ts';
 import { buildDay, type LibraryExercise } from './build.ts';
-import { MUSCLE_GROUP, PROFILES, profileFor } from './muscles.ts';
+import { MUSCLE_GROUP, PROFILES, primaryMuscle, profileFor, registerCustom } from './muscles.ts';
 
 const LB = 0.45359237;
 const NOW = new Date('2026-10-27T16:00:00Z');
@@ -259,4 +260,30 @@ test('skipping legs moves the time to other muscles instead of shortening the da
 	assert.ok(!noLegs.exercises.some((x) => ['quads', 'hamstrings', 'glutes', 'calves'].includes(x.forMuscle)));
 	assert.ok(noLegs.minutes >= full.minutes - 6, `${noLegs.minutes} vs ${full.minutes} min`);
 	assert.ok(noLegs.resting.some((r) => r.muscle === 'quads' && r.why === 'skipped today'));
+});
+
+test('a new lift gets an estimated weight from the others, leaning on the same muscle', () => {
+	const hist = [...sets('Smith Machine Bench Press', 72, 3, 185, 8, 1), ...sets('Cable Curl', 72, 3, 50, 12, 1)];
+	const curl = estimateStart('Incline Dumbbell Curl', 'dumbbell', 12, 1, hist);
+	assert.ok(curl && curl.lb >= 10 && curl.lb <= 25, JSON.stringify(curl));
+	assert.equal(curl!.from, 'Cable Curl');
+	const press = estimateStart('Incline Dumbbell Press', 'dumbbell', 10, 2, hist);
+	assert.ok(press && press.lb >= 35 && press.lb <= 52.5, JSON.stringify(press));
+	assert.equal(press!.from, 'Smith Machine Bench Press');
+	// No lifts logged: bodyweight stands in; nothing at all: no guess.
+	assert.ok(estimateStart('Dumbbell Bench Press', 'dumbbell', 10, 2, [], 80)!.lb > 0);
+	assert.equal(estimateStart('Dumbbell Bench Press', 'dumbbell', 10, 2, []), null);
+	// Wired into prescribe: no "find a weight" once anything is logged.
+	const rx = prescribe('Incline Dumbbell Curl', 'biceps', 3, [], { category: 'dumbbell', tier: 'grow', energy: 4, sore: 0, sets: hist });
+	assert.equal(rx.weightLb, curl!.lb);
+	assert.match(rx.reason, /estimated from your Cable Curl/);
+});
+
+test('a one-arm version of a two-arm lift is about half as heavy and keeps its muscles', () => {
+	registerCustom('Single-Arm Dumbbell Preacher Curl', 'Preacher Curl', true);
+	assert.equal(primaryMuscle(profileFor('Single-Arm Dumbbell Preacher Curl')), 'biceps');
+	assert.ok(profileFor('Single-Arm Dumbbell Preacher Curl').perSide);
+	const hist = sets('Preacher Curl', 72, 3, 60, 12, 1);
+	const e = estimateStart('Single-Arm Dumbbell Preacher Curl', 'dumbbell', 12, 1, hist)!;
+	assert.ok(e.lb >= 20 && e.lb <= 30, JSON.stringify(e));
 });

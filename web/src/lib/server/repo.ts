@@ -19,9 +19,15 @@ import {
 } from '$lib/db/schema';
 import { e1rm, tonnage, repFatigue, estimateKcal, readinessScore } from '$lib/metrics';
 import { estimateSetSec, MAX_REST_SEC } from '$lib/rest';
+import { registerCustom } from '$lib/coach/muscles';
 
 // ---------- exercises ----------
-export const listExercises = () => db.select().from(exercises).orderBy(exercises.muscle, exercises.name).all();
+export function listExercises() {
+	const rows = db.select().from(exercises).orderBy(exercises.muscle, exercises.name).all();
+	// Custom exercises the coach made borrow their base exercise's muscles and strength.
+	for (const e of rows) if (e.basedOn) registerCustom(e.name, e.basedOn, e.perSide);
+	return rows;
+}
 
 export function createExercise(input: {
 	name: string;
@@ -30,6 +36,8 @@ export function createExercise(input: {
 	isBodyweight?: boolean;
 	defaultRestSec?: number;
 	met?: number;
+	perSide?: boolean;
+	basedOn?: string | null;
 }) {
 	return db
 		.insert(exercises)
@@ -40,7 +48,9 @@ export function createExercise(input: {
 			isBodyweight: input.isBodyweight ?? input.category === 'bodyweight',
 			defaultRestSec: input.defaultRestSec ?? 90,
 			met: input.met ?? 5,
-			isCustom: true
+			isCustom: true,
+			perSide: input.perSide ?? false,
+			basedOn: input.basedOn ?? null
 		})
 		.returning()
 		.get();

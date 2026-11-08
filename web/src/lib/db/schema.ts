@@ -13,6 +13,8 @@ export const exercises = sqliteTable('exercises', {
 	isBodyweight: integer({ mode: 'boolean' }).notNull().default(false),
 	defaultRestSec: integer().notNull().default(120),
 	isCustom: integer({ mode: 'boolean' }).notNull().default(false), // user-added, not from the seed
+	perSide: integer({ mode: 'boolean' }).notNull().default(false), // one arm / leg at a time; weight is per side
+	basedOn: text(), // custom exercises: the library exercise whose muscles/strength it shares
 	createdAt: integer({ mode: 'timestamp' }).notNull().default(now)
 });
 

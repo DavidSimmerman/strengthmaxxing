@@ -84,6 +84,7 @@ export type ExerciseProfile = {
 	legCost?: number; // soreness multiplier for leg muscles, default 1
 	repsOverride?: [number, number];
 	noLoad?: boolean; // bodyweight / plyometric: progress reps, not weight
+	perSide?: boolean; // one arm / leg at a time: reps and weight are per side
 };
 
 const P = (
@@ -111,7 +112,7 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Push-Up': P({ ...PRESS, abs: 0.25 }, 'hpush', { noLoad: true, repsOverride: [10, 25] }),
 	'Dumbbell Bench Press': P(PRESS, 'hpush', { stretch: true }),
 	'Dumbbell Shoulder Press': P(OHP, 'vpush'),
-	'Dumbbell Row': P({ lats: 1, upperBack: 0.5, biceps: 0.5, rearDelts: 0.25 }, 'hpull'),
+	'Dumbbell Row': P({ lats: 1, upperBack: 0.5, biceps: 0.5, rearDelts: 0.25 }, 'hpull', { perSide: true }),
 	'Lateral Raise': P({ sideDelts: 1 }, 'isolation'),
 	'Bicep Curl': P({ biceps: 1 }, 'isolation'),
 	'Hammer Curl': P({ biceps: 1 }, 'isolation'),
@@ -128,7 +129,7 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Hanging Leg Raise': P({ abs: 1 }, 'core', { noLoad: true, repsOverride: [8, 15] }),
 	'Face Pull': P({ rearDelts: 1, upperBack: 0.5 }, 'isolation'),
 	'Goblet Squat': P({ quads: 1, glutes: 0.5, abs: 0.25 }, 'squat'),
-	'Bulgarian Split Squat': P({ quads: 1, glutes: 0.75 }, 'lunge', { stretch: true, legCost: 1.5 }),
+	'Bulgarian Split Squat': P({ quads: 1, glutes: 0.75 }, 'lunge', { stretch: true, legCost: 1.5, perSide: true }),
 	'Walking Lunge': P({ quads: 1, glutes: 0.75 }, 'lunge', { legCost: 1.5 }),
 	'Hack Squat': P({ quads: 1, glutes: 0.25 }, 'squat', { legCost: 1.2 }),
 	'Trap Bar Deadlift': P({ glutes: 0.75, quads: 0.5, hamstrings: 0.5, upperBack: 0.25 }, 'hinge', { legCost: 1.1 }),
@@ -167,7 +168,7 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Smith Machine Row': P(ROW, 'hpull'),
 	'Smith Machine Romanian Deadlift': P({ hamstrings: 1, glutes: 0.5 }, 'hinge', { stretch: true, legCost: 1.4 }),
 	'Smith Machine Hip Thrust': P({ glutes: 1, hamstrings: 0.25 }, 'hinge', { legCost: 0.8 }),
-	'Smith Machine Split Squat': P({ quads: 1, glutes: 0.75 }, 'lunge', { stretch: true, legCost: 1.5 }),
+	'Smith Machine Split Squat': P({ quads: 1, glutes: 0.75 }, 'lunge', { stretch: true, legCost: 1.5, perSide: true }),
 	'Smith Machine Calf Raise': P({ calves: 1 }, 'isolation', { stretch: true }),
 	'Smith Machine Close-Grip Press': P({ triceps: 1, chest: 0.5, frontDelts: 0.25 }, 'hpush'),
 	'Cable Lateral Raise': P({ sideDelts: 1 }, 'isolation', { stretch: true }),
@@ -176,15 +177,56 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Cable Woodchop': P({ obliques: 1, abs: 0.5 }, 'core'),
 	'Cable Overhead Tricep Extension': P({ triceps: 1 }, 'isolation', { stretch: true }),
 	'Cable Leg Curl': P({ hamstrings: 1 }, 'isolation'),
-	'Cable Kickback': P({ glutes: 1 }, 'isolation', { legCost: 0.8 }),
+	'Cable Kickback': P({ glutes: 1 }, 'isolation', { legCost: 0.8, perSide: true }),
 	'Bench Dip': P({ triceps: 1, chest: 0.25, frontDelts: 0.25 }, 'hpush', { noLoad: true, repsOverride: [10, 20] }),
 	'Dumbbell Pullover': P({ lats: 1, chest: 0.5 }, 'isolation', { stretch: true }),
-	'Dumbbell Step-Up': P({ quads: 1, glutes: 0.75 }, 'lunge', { legCost: 0.8 }),
+	'Dumbbell Step-Up': P({ quads: 1, glutes: 0.75 }, 'lunge', { legCost: 0.8, perSide: true }),
 	// Added for an athletic, run-friendly leg menu and an anti-rotation core option.
 	'Box Jump': P({ quads: 0.5, glutes: 0.5, calves: 0.25 }, 'power', { noLoad: true, legCost: 0.5, repsOverride: [3, 5] }),
-	'Single-Leg Romanian Deadlift': P({ hamstrings: 1, glutes: 0.75 }, 'hinge', { stretch: true, legCost: 1.1 }),
+	'Single-Leg Romanian Deadlift': P({ hamstrings: 1, glutes: 0.75 }, 'hinge', { stretch: true, legCost: 1.1, perSide: true }),
 	'Pallof Press': P({ obliques: 1, abs: 0.5 }, 'core')
 };
+
+/**
+ * How strong each lift typically is, as a fraction of the lifter's bench-press 1-rep max, in
+ * the weight they log (per dumbbell, per stack, per side for one-sided work). Used only to
+ * guess a starting weight for a lift with no history from the lifts that have some. Rough
+ * intermediate norms (ExRx / Strength Level style ratios); the first set corrects them.
+ */
+export const STRENGTH: Record<string, number> = {
+	'Back Squat': 1.3, 'Front Squat': 1.05, Deadlift: 1.6, 'Romanian Deadlift': 1.15, 'Bench Press': 1,
+	'Incline Bench Press': 0.85, 'Overhead Press': 0.65, 'Barbell Row': 0.85, 'Dumbbell Bench Press': 0.4,
+	'Dumbbell Shoulder Press': 0.28, 'Dumbbell Row': 0.4, 'Lateral Raise': 0.1, 'Bicep Curl': 0.18, 'Hammer Curl': 0.2,
+	'Tricep Pushdown': 0.35, 'Cable Fly': 0.15, 'Lat Pulldown': 0.8, 'Seated Cable Row': 0.8, 'Leg Press': 2.2,
+	'Leg Extension': 0.6, 'Leg Curl': 0.5, 'Calf Raise': 1.2, 'Hip Thrust': 1.4, 'Face Pull': 0.3, 'Goblet Squat': 0.45,
+	'Bulgarian Split Squat': 0.22, 'Walking Lunge': 0.25, 'Hack Squat': 1.2, 'Trap Bar Deadlift': 1.6, 'Sumo Deadlift': 1.6,
+	'Good Morning': 0.6, 'Dumbbell Romanian Deadlift': 0.4, 'Close-Grip Bench Press': 0.85, 'Incline Dumbbell Press': 0.35,
+	'Dumbbell Fly': 0.15, 'Machine Chest Press': 0.9, 'Pec Deck': 0.6, 'Arnold Press': 0.25, 'Rear Delt Fly': 0.08,
+	'Upright Row': 0.45, Shrug: 1.2, 'T-Bar Row': 0.8, 'Chest-Supported Row': 0.7, 'Straight-Arm Pulldown': 0.3,
+	'Barbell Curl': 0.4, 'Preacher Curl': 0.3, 'Incline Dumbbell Curl': 0.14, 'Cable Curl': 0.35, 'Skull Crusher': 0.35,
+	'Overhead Tricep Extension': 0.3, 'Seated Calf Raise': 0.8, 'Cable Crunch': 0.6, 'Kettlebell Swing': 0.35,
+	'Farmer Carry': 0.5, 'Smith Machine Squat': 1.2, 'Smith Machine Bench Press': 0.95, 'Smith Machine Incline Press': 0.8,
+	'Smith Machine Shoulder Press': 0.6, 'Smith Machine Row': 0.8, 'Smith Machine Romanian Deadlift': 1.05,
+	'Smith Machine Hip Thrust': 1.3, 'Smith Machine Split Squat': 0.5, 'Smith Machine Calf Raise': 1.1,
+	'Smith Machine Close-Grip Press': 0.8, 'Cable Lateral Raise': 0.07, 'Cable Row': 0.8, 'Cable Pull-Through': 0.5,
+	'Cable Woodchop': 0.25, 'Cable Overhead Tricep Extension': 0.3, 'Cable Leg Curl': 0.15, 'Cable Kickback': 0.12,
+	'Dumbbell Pullover': 0.3, 'Dumbbell Step-Up': 0.22, 'Single-Leg Romanian Deadlift': 0.3, 'Pallof Press': 0.2
+};
+
+const CUSTOM = new Set<string>();
+
+/**
+ * A custom exercise the coach created ("Single-Arm Dumbbell Preacher Curl") borrows the muscles
+ * and strength ratio of the library exercise it is based on. Done one side at a time from a
+ * two-handed base, it carries a bit under half the load.
+ */
+export function registerCustom(name: string, basedOn: string | null | undefined, perSide: boolean) {
+	if (!basedOn || !PROFILES[basedOn] || (PROFILES[name] && !CUSTOM.has(name))) return;
+	CUSTOM.add(name);
+	const base = PROFILES[basedOn];
+	PROFILES[name] = { ...base, perSide };
+	if (STRENGTH[basedOn] != null) STRENGTH[name] = STRENGTH[basedOn] * (perSide && !base.perSide ? 0.45 : 1);
+}
 
 /** A custom exercise with no profile: credit its one listed muscle. */
 const LEGACY: Record<string, Muscle> = {

@@ -5,7 +5,7 @@
  *
  * Research behind each number: https://plan.simmerman.cc/p/strengthmaxxing-dynamic-coach
  */
-import { MUSCLES, LEG_MUSCLES, MUSCLE_GROUP, profileFor, primaryMuscle, type Muscle, type ExerciseProfile } from './muscles.ts';
+import { MUSCLES, LEG_MUSCLES, MUSCLE_GROUP, STRENGTH, profileFor, primaryMuscle, type Muscle, type ExerciseProfile } from './muscles.ts';
 import { nextLb } from '../equipment.ts';
 import { estimateSetSec } from '../rest.ts';
 
@@ -291,7 +291,70 @@ export type Prescription = {
 	warmups: { weightLb: number; reps: number }[];
 };
 
-type Ctx = { category: string; tier: Tier; energy: number | null; sore: 0 | 1 | 2 };
+type Ctx = {
+	category: string;
+	tier: Tier;
+	energy: number | null;
+	sore: 0 | 1 | 2;
+	/** Recent sets of every exercise: a lift with no history gets a weight estimated from them. */
+	sets?: LoggedSet[];
+	bodyweightKg?: number | null;
+};
+
+/**
+ * A starting weight for a lift never done before, from the lifts that have been. Each logged
+ * lift implies a "bench 1-rep max" (its estimated max ÷ its STRENGTH ratio); the closest
+ * relatives (same muscle, then same movement) count most. With no lifts at all, bodyweight
+ * stands in (bench ≈ 0.75 × bodyweight, conservative). Aimed 10% light, rounded down to the
+ * equipment — the first set's reps correct it from there.
+ */
+export function estimateStart(
+	name: string,
+	category: string,
+	reps: number,
+	rir: number,
+	sets: LoggedSet[],
+	bodyweightKg?: number | null
+): { lb: number; from: string } | null {
+	const ratio = STRENGTH[name];
+	const p = profileFor(name);
+	if (ratio == null || p.noLoad) return null;
+	const best = new Map<string, number>();
+	for (const s of sets) {
+		if (s.isWarmup || s.weightKg <= 0 || s.exercise === name || STRENGTH[s.exercise] == null) continue;
+		const e = e1rmRir(s.weightKg, s.reps, s.rir);
+		if (e > (best.get(s.exercise) ?? 0)) best.set(s.exercise, e);
+	}
+	const m = primaryMuscle(p);
+	const rows = [...best].map(([ex, e]) => {
+		const q = profileFor(ex);
+		const qm = primaryMuscle(q);
+		const w = qm === m ? 4 : MUSCLE_GROUP[qm] === MUSCLE_GROUP[m] ? 3 : q.pattern === p.pattern ? 2 : q.compound === p.compound ? 1 : 0.5;
+		return { ex, index: e / STRENGTH[ex], w };
+	});
+	let index: number;
+	let from: string;
+	if (rows.length) {
+		// Weighted median, so one odd lift doesn't swing it.
+		rows.sort((a, b) => a.index - b.index);
+		const half = rows.reduce((n, r) => n + r.w, 0) / 2;
+		let acc = 0;
+		index = rows.find((r) => (acc += r.w) >= half)!.index;
+		// Name the lift it came from only when one relative clearly leads.
+		const top = Math.max(...rows.map((r) => r.w));
+		const lead = rows.filter((r) => r.w === top);
+		from = lead.length === 1 && top >= 3 ? lead[0].ex : 'other lifts';
+	} else if (bodyweightKg) {
+		index = bodyweightKg * 0.75;
+		from = 'bodyweight';
+	} else return null;
+	const kg = (index * ratio * 0.9) / (1 + (reps + rir) / 30);
+	const lb = kg / LB;
+	const down = nextLb(category, lb + 1e-6, -1);
+	const lowest = nextLb(category, 0, 1);
+	const out = down > 0 ? down : lowest;
+	return out > 0 ? { lb: out, from } : null;
+}
 
 /** Free weights and Smith load heavier compounds than cables and machines do. */
 const FREE = (category: string) => ['barbell', 'smith machine', 'dumbbell', 'kettlebell'].includes(category);
@@ -346,10 +409,20 @@ export function prescribe(name: string, muscle: string, sets: number, hist: Hist
 	const restSec = restFor(p, ctx.category);
 	const base = { exercise: name, sets, repLow: lo, repHigh: hi, rir, restSec, warmups: [] as Prescription['warmups'] };
 	const last = hist.at(-1);
-	if (!last || !last.sets.length)
-		return p.noLoad
-			? { ...base, targetReps: lo + 2, weightLb: 0, kind: 'new', reason: `New exercise: aim for ${lo + 2}, stopping ${rir[1]} short of failure.` }
-			: { ...base, targetReps: lo + 2, weightLb: null, kind: 'new', reason: `New exercise: find a weight you can do for ${lo + 2} with ${rir[1]} left.` };
+	if (!last || !last.sets.length) {
+		if (p.noLoad)
+			return { ...base, targetReps: lo + 2, weightLb: 0, kind: 'new', reason: `New exercise: aim for ${lo + 2}, stopping ${rir[1]} short of failure.` };
+		const est = estimateStart(name, ctx.category, lo + 2, rir[1], ctx.sets ?? [], ctx.bodyweightKg);
+		if (est)
+			return {
+				...base,
+				targetReps: lo + 2,
+				weightLb: est.lb,
+				kind: 'new',
+				reason: `New exercise, estimated from your ${est.from === 'bodyweight' ? 'bodyweight' : est.from}: ${est.lb} lb for ${lo + 2}. Adjust after the first set if it's off.`
+			};
+		return { ...base, targetReps: lo + 2, weightLb: null, kind: 'new', reason: `New exercise: find a weight you can do for ${lo + 2} with ${rir[1]} left.` };
+	}
 
 	const lastLb = roundLb(Math.max(...last.sets.map((x) => x.weightKg)) / LB);
 	const atTop = last.sets.filter((x) => roundLb(x.weightKg / LB) === lastLb);

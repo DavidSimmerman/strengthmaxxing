@@ -3,7 +3,7 @@ import * as repo from '$lib/server/repo';
 import { e1rm } from '$lib/metrics';
 import { estimateSetSec, SWITCH_SEC } from '$lib/rest';
 import type { Actions, PageServerLoad } from './$types';
-import type { SessionPlan } from '$lib/server/today';
+import { isPerSide, type SessionPlan } from '$lib/server/today';
 const KG_PER_LB = 0.45359237;
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			targetWeightKg: (x.weightLb ?? 0) * KG_PER_LB,
 			restSec: x.restSec,
 			supersetGroup: x.supersetGroup,
-			perSide: false,
+			perSide: x.perSide ?? isPerSide(lib0.get(x.exerciseId)!),
 			orderIndex: i
 		}));
 	const planned: Planned[] = template ? [] : fromPlan;
@@ -80,7 +80,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			targetWeightKg: weightKg,
 			restSec: e.defaultRestSec,
 			supersetGroup,
-			perSide: session.sets.some((s) => s.exerciseId === exerciseId && s.side != null),
+			perSide: isPerSide(e) || session.sets.some((s) => s.exerciseId === exerciseId && s.side != null),
 			orderIndex: planned.length
 		});
 	};

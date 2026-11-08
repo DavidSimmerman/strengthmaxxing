@@ -5,7 +5,7 @@
  */
 import * as repo from './repo';
 import { callAgent, getProfile, saveProfile, type SessionSuggestions } from './coach';
-import { addInjury, fillAfterSkip, hasEquipment, isMuscle, prescribeFor, retotal, type SessionPlan, type SessionPlanExercise } from './today';
+import { addInjury, fillAfterSkip, hasEquipment, isMuscle, isPerSide, prescribeFor, retotal, type SessionPlan, type SessionPlanExercise } from './today';
 import { primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
 import { warmupsFor } from '$lib/coach/engine';
 import { nextLb } from '$lib/equipment';
@@ -20,7 +20,40 @@ type Action =
 	| { type: 'dislike'; exercise: string }
 	| { type: 'favorite'; exercise: string }
 	| { type: 'skip'; muscles: string[] }
+	| { type: 'create'; name: string; basedOn: string; equipment?: string; perSide?: boolean; replace?: string | null }
 	| { type: 'injury'; muscles: string[]; note: string };
+
+const CATEGORIES = ['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'smith machine', 'kettlebell'];
+type LibRow = ReturnType<typeof repo.listExercises>[number];
+
+/**
+ * The coach adds an exercise the library lacks ("Bayesian Curl", "Single-Arm Dumbbell Preacher
+ * Curl"). It must be based on a library exercise, whose muscles and strength it borrows; a
+ * one-sided version gets its own history, so per-arm weights never mix with two-arm ones.
+ * Returns the (new or existing) exercise, and adds it to the lookup maps.
+ */
+function createFor(a: Extract<Action, { type: 'create' }>, byName: Map<string, LibRow>, byId: Map<number, LibRow>, applied: string[]) {
+	const name = typeof a.name === 'string' ? a.name.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+	const base = typeof a.basedOn === 'string' ? byName.get(a.basedOn) : undefined;
+	if (name.length < 3 || !base) return null;
+	const existing = [...byName.values()].find((e) => e.name.toLowerCase() === name.toLowerCase());
+	if (existing) return existing;
+	const category = typeof a.equipment === 'string' && CATEGORIES.includes(a.equipment) ? a.equipment : base.category;
+	const e = repo.createExercise({
+		name,
+		muscle: base.muscle,
+		category,
+		perSide: !!a.perSide,
+		basedOn: base.basedOn ?? base.name,
+		defaultRestSec: base.defaultRestSec,
+		met: base.met
+	});
+	repo.listExercises(); // registers its muscle profile
+	byName.set(e.name, e);
+	byId.set(e.id, e);
+	applied.push(`Added ${e.name} to your exercises${e.perSide ? ' (one side at a time)' : ''}`);
+	return e;
+}
 
 /** Save an exercise as a favourite (picked most sessions, others still rotate in). */
 function addFavorite(name: unknown, byName: Map<string, { name: string }>, applied: string[]) {
@@ -97,6 +130,7 @@ export async function liveChat(sessionId: number, message: string) {
 				return {
 					name: e.name,
 					equipment: e.category,
+					oneSideAtATime: isPerSide(e),
 					forMuscle: forMuscle(id),
 					targetSets: targetSets(id),
 					today: it ? { weightLb: Math.round((it.weightKg / LB) * 2) / 2, reps: it.reps } : null,
@@ -115,8 +149,16 @@ export async function liveChat(sessionId: number, message: string) {
 	let planOut = plan ? { ...plan, exercises: [...plan.exercises] } : null;
 	const idOf = (name: unknown) => (typeof name === 'string' ? byName.get(name)?.id : undefined);
 
-	for (const a of actions.slice(0, 6)) {
-		if (a.type === 'swap') {
+	const queue = actions.slice(0, 6);
+	for (let qi = 0; qi < queue.length && qi < 10; qi++) {
+		const a = queue[qi];
+		if (a.type === 'create') {
+			const e = createFor(a, byName, byId, applied);
+			if (e && typeof a.replace === 'string' && alternatives[a.replace]) {
+				alternatives[a.replace].push(e.name);
+				queue.push({ type: 'swap', exercise: a.replace, to: e.name });
+			}
+		} else if (a.type === 'swap') {
 			const fromId = idOf(a.exercise);
 			const to = typeof a.to === 'string' ? byName.get(a.to) : undefined;
 			if (!fromId || !ids.includes(fromId) || !to || !alternatives[a.exercise]?.includes(to.name)) continue;
@@ -310,6 +352,7 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 			exercises: out.exercises.map((x) => ({
 				name: x.exercise,
 				equipment: x.category,
+				oneSideAtATime: x.perSide,
 				forMuscle: x.forMuscle,
 				targetSets: x.sets,
 				today: { weightLb: x.weightLb, reps: x.targetReps },
@@ -325,8 +368,17 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 	const applied: string[] = [];
 	const find = (name: unknown) => out.exercises.findIndex((x) => x.exercise === name);
 
-	for (const a of actions.slice(0, 8)) {
-		if (a.type === 'swap') {
+	const byId = new Map(lib.map((e) => [e.id, e]));
+	const queue = actions.slice(0, 8);
+	for (let qi = 0; qi < queue.length && qi < 12; qi++) {
+		const a = queue[qi];
+		if (a.type === 'create') {
+			const e = createFor(a, byName, byId, applied);
+			if (e && typeof a.replace === 'string' && alternatives[a.replace]) {
+				alternatives[a.replace].push(e.name);
+				queue.push({ type: 'swap', exercise: a.replace, to: e.name });
+			}
+		} else if (a.type === 'swap') {
 			const i = find(a.exercise);
 			const to = typeof a.to === 'string' ? byName.get(a.to) : undefined;
 			if (i < 0 || !to || !alternatives[a.exercise]?.includes(to.name) || names().has(to.name)) continue;

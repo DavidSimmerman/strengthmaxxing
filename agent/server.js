@@ -365,6 +365,7 @@ function livePrompt(input) {
     '{"type":"dislike","exercise":string}|' +
     '{"type":"favorite","exercise":string}|' +
     '{"type":"skip","muscles":[string]}|' +
+    '{"type":"create","name":string,"basedOn":string,"equipment":"barbell"|"dumbbell"|"machine"|"cable"|"bodyweight"|"smith machine"|"kettlebell","perSide":boolean,"replace":string|null}|' +
     '{"type":"injury","muscles":[string],"note":string}]}';
   const preview = input.stage === 'preview';
   return [
@@ -403,6 +404,16 @@ function livePrompt(input) {
       'biceps, triceps, abs, obliques, quads, hamstrings, glutes, calves (the ones the painful joint/area loads). ' +
       'The app keeps those lighter for 7 days. Sharp pain or pain that changes how they move: tell them to stop ' +
       'that exercise and not push through; suggest getting it checked if it persists. You are not a doctor.',
+    '- "create": add an exercise the library lacks, then (with "replace") swap it in for a session exercise. ' +
+      'Use it when they name an exercise that is not in alternatives (e.g. "Bayesian curls", "landmine press"), ' +
+      'or a ONE-ARM / ONE-LEG version of a two-sided one ("doing preacher curls single arm" -> "Single-Arm ' +
+      'Dumbbell Preacher Curl", basedOn "Preacher Curl", equipment "dumbbell", perSide true). A one-side version ' +
+      'MUST be its own exercise so its per-arm weights never mix with two-arm history. name: a clear standard ' +
+      'name in Title Case. basedOn: the exact name of the closest exercise anywhere in alternatives or ' +
+      'session.exercises (same muscle and movement). If an exercise with that name already exists, it is reused. ' +
+      'Never tell them you cannot add or rename exercises: create it.',
+    '- oneSideAtATime exercises are done one arm / leg at a time; their weight is PER ARM (or per leg) and reps ' +
+      'are per side. Say "per arm" whenever you give such a weight.',
     'They train every day: the coach spreads muscles across the week, so what is not in today\'s session ' +
       'comes on a coming day. Exercises rotate for variety; profile.favorites come up most often.',
     'Questions (form cues, why this exercise, how long to rest) need no actions: just answer.',

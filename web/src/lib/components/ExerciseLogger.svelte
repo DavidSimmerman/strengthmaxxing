@@ -7,7 +7,7 @@
 	import { Pencil, Check, Trash2, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Minus } from '@lucide/svelte';
 	import { enhance } from '$app/forms';
 	import Stepper from './Stepper.svelte';
-	import { shortDate } from '$lib/ui';
+	import { shortDate, sideWord } from '$lib/ui';
 	import { isApp, native } from '$lib/native';
 	import { belowLb } from '$lib/equipment';
 	import { afterSet } from '$lib/coach/engine';
@@ -64,6 +64,9 @@
 	);
 	// svelte-ignore state_referenced_locally
 	let repsR = $state(reps); // right side, one-side-at-a-time exercises
+	const side = $derived(sideWord(exercise.muscle));
+	// Weights on one-side exercises are per arm / leg; say so wherever a weight is shown.
+	const perSideW = $derived(exercise.perSide ? ` per ${side}` : '');
 	// svelte-ignore state_referenced_locally
 	let weight = $state(
 		toDisplay(
@@ -257,8 +260,9 @@
 				<a href="/exercises/{exercise.exerciseId}" class="hover:text-accent">{exercise.name}</a>
 			</h3>
 			<p class="text-xs uppercase tracking-wider text-zinc-500">
-				{exercise.muscle} · target {exercise.targetSets}×{exercise.targetReps}{exercise.perSide ? ' each side' : ''}
-				{#if exercise.targetWeightKg}@ {wt(exercise.targetWeightKg)}{/if}
+				{#if exercise.perSide}<span class="mr-1 rounded bg-panel2 px-1.5 py-0.5 font-bold text-zinc-300">One {side}</span>{/if}
+				{exercise.muscle} · target {exercise.targetSets}×{exercise.targetReps}{exercise.perSide ? ` each ${side}` : ''}
+				{#if exercise.targetWeightKg}@ {wt(exercise.targetWeightKg)}{perSideW}{/if}
 			</p>
 			{#if lastTimeText && !complete}
 				<p class="mt-0.5 text-xs text-zinc-500">
@@ -279,7 +283,7 @@
 							: sg.kind === 'down'
 								? 'text-accent'
 								: 'text-zinc-200'}"
-						>{sg.weightKg > 0 ? wt(sg.weightKg) : exercise.category === 'bodyweight' ? 'Bodyweight' : 'Find a weight'} × {sg.reps}</span
+						>{sg.weightKg > 0 ? wt(sg.weightKg) + perSideW : exercise.category === 'bodyweight' ? 'Bodyweight' : 'Find a weight'} × {sg.reps}</span
 					>
 					<span class="ml-auto text-[11px] text-zinc-500">today</span>
 				</div>
@@ -352,7 +356,7 @@
 						<div class="grid gap-2 {exercise.perSide ? 'grid-cols-3' : 'grid-cols-2'}">
 							<Stepper bind:value={editReps} label={exercise.perSide ? 'Left' : 'Reps'} step={1} min={1} max={100} accent="accent2" compact={exercise.perSide} />
 							{#if exercise.perSide}<Stepper bind:value={editRepsR} label="Right" step={1} min={1} max={100} accent="accent2" compact />{/if}
-							<Stepper bind:value={editWeight} label={exercise.perSide ? units() : 'Weight'} category={exercise.category} min={0} unit={exercise.perSide ? '' : units()} compact={exercise.perSide} />
+							<Stepper bind:value={editWeight} label={exercise.perSide ? `${units()} / ${side}` : 'Weight'} category={exercise.category} min={0} unit={exercise.perSide ? '' : units()} compact={exercise.perSide} />
 						</div>
 						<div class="mt-2 flex gap-2 text-sm">
 							<button
@@ -491,7 +495,7 @@
 			{#if exercise.perSide}<Stepper bind:value={repsR} label="Right" step={1} min={1} max={100} accent="accent2" compact />{/if}
 			<Stepper
 				bind:value={weight}
-				label={exercise.perSide ? units() : 'Weight'}
+				label={exercise.perSide ? `${units()} / ${side}` : 'Weight'}
 				category={exercise.category}
 				min={0}
 				unit={exercise.perSide ? '' : units()}
