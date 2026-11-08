@@ -85,6 +85,7 @@ export type ExerciseProfile = {
 	repsOverride?: [number, number];
 	noLoad?: boolean; // bodyweight / plyometric: progress reps, not weight
 	perSide?: boolean; // one arm / leg at a time: reps and weight are per side
+	timed?: boolean; // held or carried for time: "reps" are seconds
 };
 
 const P = (
@@ -125,7 +126,7 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Leg Curl': P({ hamstrings: 1 }, 'isolation'),
 	'Calf Raise': P({ calves: 1 }, 'isolation', { stretch: true }),
 	'Hip Thrust': P({ glutes: 1, hamstrings: 0.25 }, 'hinge', { legCost: 0.8 }),
-	Plank: P({ abs: 0.5, obliques: 0.25 }, 'core', { noLoad: true, repsOverride: [30, 60] }),
+	Plank: P({ abs: 0.5, obliques: 0.25 }, 'core', { noLoad: true, timed: true, repsOverride: [30, 60] }),
 	'Hanging Leg Raise': P({ abs: 1 }, 'core', { noLoad: true, repsOverride: [8, 15] }),
 	'Face Pull': P({ rearDelts: 1, upperBack: 0.5 }, 'isolation'),
 	'Goblet Squat': P({ quads: 1, glutes: 0.5, abs: 0.25 }, 'squat'),
@@ -160,7 +161,7 @@ export const PROFILES: Record<string, ExerciseProfile> = {
 	'Ab Wheel Rollout': P({ abs: 1, obliques: 0.25 }, 'core', { stretch: true, noLoad: true, repsOverride: [6, 15] }),
 	'Russian Twist': P({ obliques: 1, abs: 0.5 }, 'core', { noLoad: true, repsOverride: [12, 24] }),
 	'Kettlebell Swing': P({ glutes: 1, hamstrings: 0.5 }, 'power', { legCost: 0.8 }),
-	'Farmer Carry': P({ obliques: 0.5, abs: 0.5, upperBack: 0.5 }, 'core', { repsOverride: [30, 60] }),
+	'Farmer Carry': P({ obliques: 0.5, abs: 0.5, upperBack: 0.5 }, 'core', { timed: true, repsOverride: [30, 60] }),
 	'Smith Machine Squat': P({ quads: 1, glutes: 0.5 }, 'squat', { legCost: 1.2 }),
 	'Smith Machine Bench Press': P(PRESS, 'hpush'),
 	'Smith Machine Incline Press': P(PRESS, 'hpush'),
@@ -245,6 +246,13 @@ const LEGACY: Record<string, Muscle> = {
 export function profileFor(name: string, muscle = ''): ExerciseProfile {
 	return PROFILES[name] ?? P({ [LEGACY[muscle.toLowerCase()] ?? 'abs']: 1 }, 'isolation');
 }
+
+/** Held or carried for time (plank, farmer carry): its "reps" are seconds. */
+export const isTimed = (name: string) => !!PROFILES[name]?.timed;
+
+/** "12 reps" or "45 s", for display. `n` may be a range like "30–60". */
+export const repsLabel = (name: string, n: number | string, withWord = true) =>
+	isTimed(name) ? `${n} s` : withWord ? `${n} reps` : `${n}`;
 
 /** The muscle an exercise is mainly for (its highest credit). */
 export function primaryMuscle(p: ExerciseProfile): Muscle {

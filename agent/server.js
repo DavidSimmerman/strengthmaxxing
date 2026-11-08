@@ -412,6 +412,10 @@ function livePrompt(input) {
       'name in Title Case. basedOn: the exact name of the closest exercise anywhere in alternatives or ' +
       'session.exercises (same muscle and movement). If an exercise with that name already exists, it is reused. ' +
       'Never tell them you cannot add or rename exercises: create it.',
+    '- repsAreSeconds exercises (plank, carries) are held for time: their reps are SECONDS. Say "45 seconds", ' +
+      'never "45 reps".',
+    '- Never quote a weight or rep target for an exercise you create or swap in: the app works it out from ' +
+      'their history and shows it. Just say what you changed.',
     '- oneSideAtATime exercises are done one arm / leg at a time; their weight is PER ARM (or per leg) and reps ' +
       'are per side. Say "per arm" whenever you give such a weight.',
     'They train every day: the coach spreads muscles across the week, so what is not in today\'s session ' +

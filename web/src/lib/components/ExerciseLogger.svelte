@@ -11,6 +11,7 @@
 	import { isApp, native } from '$lib/native';
 	import { belowLb } from '$lib/equipment';
 	import { afterSet } from '$lib/coach/engine';
+	import { isTimed } from '$lib/coach/muscles';
 	import { KG_PER_LB } from '$lib/units.svelte';
 	import { wt, vol, toDisplay, fromDisplay, weightStep, units } from '$lib/units.svelte';
 
@@ -65,6 +66,9 @@
 	// svelte-ignore state_referenced_locally
 	let repsR = $state(reps); // right side, one-side-at-a-time exercises
 	const side = $derived(sideWord(exercise.muscle));
+	// Plank, farmer carry: "reps" are seconds held.
+	const timed = $derived(isTimed(exercise.name));
+	const sec = $derived(timed ? ' s' : '');
 	// Weights on one-side exercises are per arm / leg; say so wherever a weight is shown.
 	const perSideW = $derived(exercise.perSide ? ` per ${side}` : '');
 	// svelte-ignore state_referenced_locally
@@ -206,7 +210,9 @@
 	});
 	const lastTimeText = $derived(
 		exercise.lastTime?.sets.length
-			? exercise.lastTime.sets.map((s) => `${s.side ?? ''}${s.reps}×${toDisplay(s.weightKg)}`).join(', ')
+			? exercise.lastTime.sets
+					.map((s) => `${s.side ?? ''}${s.reps}${sec}${s.weightKg > 0 ? `×${toDisplay(s.weightKg)}` : ''}`)
+					.join(', ') + (exercise.lastTime.sets.some((s) => s.weightKg > 0) ? ` ${units()}` : '')
 			: ''
 	);
 </script>
@@ -261,13 +267,13 @@
 			</h3>
 			<p class="text-xs uppercase tracking-wider text-zinc-500">
 				{#if exercise.perSide}<span class="mr-1 rounded bg-panel2 px-1.5 py-0.5 font-bold text-zinc-300">One {side}</span>{/if}
-				{exercise.muscle} · target {exercise.targetSets}×{exercise.targetReps}{exercise.perSide ? ` each ${side}` : ''}
+				{exercise.muscle} · target {exercise.targetSets}×{exercise.targetReps}{sec}{exercise.perSide ? ` each ${side}` : ''}
 				{#if exercise.targetWeightKg}@ {wt(exercise.targetWeightKg)}{perSideW}{/if}
 			</p>
 			{#if lastTimeText && !complete}
 				<p class="mt-0.5 text-xs text-zinc-500">
 					Last time ({shortDate(exercise.lastTime!.date)}): <span class="tabular-nums text-zinc-300"
-						>{lastTimeText} {units()}</span
+						>{lastTimeText}</span
 					>
 				</p>
 			{/if}
@@ -283,7 +289,7 @@
 							: sg.kind === 'down'
 								? 'text-accent'
 								: 'text-zinc-200'}"
-						>{sg.weightKg > 0 ? wt(sg.weightKg) + perSideW : exercise.category === 'bodyweight' ? 'Bodyweight' : 'Find a weight'} × {sg.reps}</span
+						>{sg.weightKg > 0 ? wt(sg.weightKg) + perSideW : exercise.category === 'bodyweight' ? 'Bodyweight' : 'Find a weight'} × {sg.reps}{sec}</span
 					>
 					<span class="ml-auto text-[11px] text-zinc-500">today</span>
 				</div>
@@ -354,7 +360,7 @@
 						{/if}
 						<input type="hidden" name="weightKg" value={fromDisplay(editWeight)} />
 						<div class="grid gap-2 {exercise.perSide ? 'grid-cols-3' : 'grid-cols-2'}">
-							<Stepper bind:value={editReps} label={exercise.perSide ? 'Left' : 'Reps'} step={1} min={1} max={100} accent="accent2" compact={exercise.perSide} />
+							<Stepper bind:value={editReps} label={exercise.perSide ? 'Left' : timed ? 'Seconds' : 'Reps'} step={timed ? 5 : 1} min={1} max={100} accent="accent2" compact={exercise.perSide} />
 							{#if exercise.perSide}<Stepper bind:value={editRepsR} label="Right" step={1} min={1} max={100} accent="accent2" compact />{/if}
 							<Stepper bind:value={editWeight} label={exercise.perSide ? `${units()} / ${side}` : 'Weight'} category={exercise.category} min={0} unit={exercise.perSide ? '' : units()} compact={exercise.perSide} />
 						</div>
@@ -380,7 +386,7 @@
 						<span class="w-6 text-center font-bold text-zinc-500">
 							{r.isWarmup ? 'W' : working.indexOf(r) + 1}
 						</span>
-						<span class="font-semibold">{repsText(r)} <span class="text-zinc-500">reps</span></span>
+						<span class="font-semibold">{repsText(r)} <span class="text-zinc-500">{timed ? 'sec' : 'reps'}</span></span>
 						<span class="text-zinc-600">×</span>
 						<span class="font-semibold">{wt(r.sets[0].weightKg)}</span>
 						<span class="ml-auto text-xs text-zinc-500"
@@ -456,7 +462,7 @@
 			<div class="mb-3 rounded-xl bg-accent p-3 text-ink">
 				<div class="flex items-center gap-2 text-lg font-black"><ArrowDown class="h-5 w-5" />Drop to {drop.to} {units()}</div>
 				<p class="text-xs font-semibold">
-					{drop.short} reps short of {targetReps}. Keep {drop.from} if that set was a fluke.
+					{drop.short}{timed ? ' s' : ' reps'} short of {targetReps}{sec}. Keep {drop.from} if that set was a fluke.
 				</p>
 				<div class="mt-2 flex gap-2 text-sm font-bold">
 					<button type="button" onclick={() => (drop = null)} class="flex-1 rounded-lg bg-ink px-3 py-2 text-zinc-100"
@@ -491,7 +497,7 @@
 			</div>
 		{/if}
 		<div class="grid gap-3 {exercise.perSide ? 'grid-cols-3 gap-2' : 'grid-cols-2'}">
-			<Stepper bind:value={reps} label={exercise.perSide ? 'Left' : 'Reps'} step={1} min={1} max={100} accent="accent2" compact={exercise.perSide} />
+			<Stepper bind:value={reps} label={exercise.perSide ? 'Left' : timed ? 'Seconds' : 'Reps'} step={timed ? 5 : 1} min={1} max={100} accent="accent2" compact={exercise.perSide} />
 			{#if exercise.perSide}<Stepper bind:value={repsR} label="Right" step={1} min={1} max={100} accent="accent2" compact />{/if}
 			<Stepper
 				bind:value={weight}

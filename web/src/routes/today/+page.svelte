@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { dateTime, sideWord } from '$lib/ui';
 	import { wt, KG_PER_LB } from '$lib/units.svelte';
-	import { MUSCLE_LABEL } from '$lib/coach/muscles';
+	import { MUSCLE_LABEL, repsLabel } from '$lib/coach/muscles';
 	import type { SessionPlan } from '$lib/server/today';
 	import CoachChat from '$lib/components/CoachChat.svelte';
 	let { data } = $props();
@@ -222,7 +222,7 @@
 					</div>
 					<div class="mt-1.5 flex flex-wrap items-center gap-x-2 text-sm tabular-nums">
 						{#if x.kind === 'up'}<ArrowUp class="h-3.5 w-3.5 {tone.up}" />{:else if x.kind === 'down'}<ArrowDown class="h-3.5 w-3.5 {tone.down}" />{:else}<Minus class="h-3.5 w-3.5 text-zinc-500" />{/if}
-						<b class={tone[x.kind]}>{x.sets} × {x.repLow}–{x.repHigh}{x.perSide ? ` each ${sideWord(x.forMuscle)}` : ''} · {weight(x.weightLb)}{x.perSide && x.weightLb ? ` per ${sideWord(x.forMuscle)}` : ''}</b>
+						<b class={tone[x.kind]}>{x.sets} × {repsLabel(x.exercise, `${x.repLow}–${x.repHigh}`, false)}{x.perSide ? ` each ${sideWord(x.forMuscle)}` : ''} · {weight(x.weightLb)}{x.perSide && x.weightLb ? ` per ${sideWord(x.forMuscle)}` : ''}</b>
 						<span class="text-[11px] text-zinc-500">{x.rir[0]}–{x.rir[1]} left · rest {restLabel(x.restSec)}</span>
 					</div>
 					{#if x.warmups.length}

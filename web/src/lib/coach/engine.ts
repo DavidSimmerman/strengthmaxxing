@@ -411,7 +411,15 @@ export function prescribe(name: string, muscle: string, sets: number, hist: Hist
 	const last = hist.at(-1);
 	if (!last || !last.sets.length) {
 		if (p.noLoad)
-			return { ...base, targetReps: lo + 2, weightLb: 0, kind: 'new', reason: `New exercise: aim for ${lo + 2}, stopping ${rir[1]} short of failure.` };
+			return {
+				...base,
+				targetReps: lo + 2,
+				weightLb: 0,
+				kind: 'new',
+				reason: p.timed
+					? `New exercise: hold for ${lo + 2} s, stopping before your form breaks.`
+					: `New exercise: aim for ${lo + 2} reps, stopping ${rir[1]} short of failure.`
+			};
 		const est = estimateStart(name, ctx.category, lo + 2, rir[1], ctx.sets ?? [], ctx.bodyweightKg);
 		if (est)
 			return {
@@ -419,7 +427,7 @@ export function prescribe(name: string, muscle: string, sets: number, hist: Hist
 				targetReps: lo + 2,
 				weightLb: est.lb,
 				kind: 'new',
-				reason: `New exercise, estimated from your ${est.from === 'bodyweight' ? 'bodyweight' : est.from}: ${est.lb} lb for ${lo + 2}. Adjust after the first set if it's off.`
+				reason: `New exercise, estimated from your ${est.from}: ${est.lb} lb for ${p.timed ? `${lo + 2} s` : `${lo + 2} reps`}. Adjust after the first set if it's off.`
 			};
 		return { ...base, targetReps: lo + 2, weightLb: null, kind: 'new', reason: `New exercise: find a weight you can do for ${lo + 2} with ${rir[1]} left.` };
 	}
@@ -443,7 +451,9 @@ export function prescribe(name: string, muscle: string, sets: number, hist: Hist
 	if (p.noLoad && lastLb === 0) {
 		target = clamp(minReps + 1, lo, hi + 5);
 		kind = minReps >= hi ? 'up' : 'hold';
-		reason = `Bodyweight: aim for ${target} on every set (${minReps} last time).`;
+		reason = p.timed
+			? `Hold for ${target} s on every set (${minReps} s last time).`
+			: `Bodyweight: aim for ${target} reps on every set (${minReps} last time).`;
 	} else if (minReps >= hi) {
 		const up = stepUp(ctx.category, lastLb, minReps - hi);
 		if (hold) {

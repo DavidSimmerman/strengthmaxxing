@@ -6,7 +6,7 @@
 import * as repo from './repo';
 import { callAgent, getProfile, saveProfile, type SessionSuggestions } from './coach';
 import { addInjury, fillAfterSkip, hasEquipment, isMuscle, isPerSide, prescribeFor, retotal, type SessionPlan, type SessionPlanExercise } from './today';
-import { primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
+import { isTimed, primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
 import { warmupsFor } from '$lib/coach/engine';
 import { nextLb } from '$lib/equipment';
 
@@ -131,6 +131,7 @@ export async function liveChat(sessionId: number, message: string) {
 					name: e.name,
 					equipment: e.category,
 					oneSideAtATime: isPerSide(e),
+					repsAreSeconds: isTimed(e.name),
 					forMuscle: forMuscle(id),
 					targetSets: targetSets(id),
 					today: it ? { weightLb: Math.round((it.weightKg / LB) * 2) / 2, reps: it.reps } : null,
@@ -353,6 +354,7 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 				name: x.exercise,
 				equipment: x.category,
 				oneSideAtATime: x.perSide,
+				repsAreSeconds: isTimed(x.exercise),
 				forMuscle: x.forMuscle,
 				targetSets: x.sets,
 				today: { weightLb: x.weightLb, reps: x.targetReps },
