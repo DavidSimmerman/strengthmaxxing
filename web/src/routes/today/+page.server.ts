@@ -21,6 +21,7 @@ function readCheckIn(fd: FormData) {
 		energy: e >= 1 && e <= 5 ? e : null,
 		minutes: MINUTES.includes(m) ? m : 45,
 		soreness: sorenessFromTiles(byTile),
+		note: String(fd.get('note') ?? '').trim().slice(0, 200),
 		byTile
 	};
 }
@@ -35,7 +36,7 @@ export const actions: Actions = {
 	// Engine only: instant. The page then asks Claude to review it (see /api/coach/today/review).
 	build: async ({ request }) => {
 		const c = readCheckIn(await request.formData());
-		const checkIn = { energy: c.energy, minutes: c.minutes, soreness: c.soreness };
+		const checkIn = { energy: c.energy, minutes: c.minutes, soreness: c.soreness, ...(c.note ? { note: c.note } : {}) };
 		return { plan: toSessionPlan(await planTodayLive(checkIn), checkIn) };
 	},
 	start: async ({ request }) => {

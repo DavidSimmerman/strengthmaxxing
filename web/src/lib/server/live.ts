@@ -4,6 +4,7 @@
  * exercise the lifter can do, weights snapped to the equipment, sets kept in range.
  */
 import * as repo from './repo';
+import { coachPlanDay } from './dayplan';
 import { callAgent, getProfile, saveProfile, type SessionSuggestions } from './coach';
 import { addInjury, fillAfterSkip, hasEquipment, isMuscle, isPerSide, prescribeFor, retotal, type SessionPlan, type SessionPlanExercise } from './today';
 import { isTimed, primaryMuscle, profileFor, type Muscle } from '$lib/coach/muscles';
@@ -20,6 +21,7 @@ type Action =
 	| { type: 'dislike'; exercise: string }
 	| { type: 'favorite'; exercise: string }
 	| { type: 'skip'; muscles: string[] }
+	| { type: 'replan'; note: string }
 	| { type: 'create'; name: string; basedOn: string; equipment?: string; perSide?: boolean; replace?: string | null }
 	| { type: 'injury'; muscles: string[]; note: string };
 
@@ -374,7 +376,12 @@ export async function previewChat(plan: SessionPlan, message: string, history: C
 	const queue = actions.slice(0, 8);
 	for (let qi = 0; qi < queue.length && qi < 12; qi++) {
 		const a = queue[qi];
-		if (a.type === 'create') {
+		if (a.type === 'replan') {
+			// A different day altogether ("actually I'm feeling legs"): the coach re-plans it.
+			const note = [out.checkIn.note, typeof a.note === 'string' ? a.note : message].filter(Boolean).join('; ').slice(0, 300);
+			Object.assign(out, await coachPlanDay({ ...out, checkIn: { ...out.checkIn, note } }));
+			applied.push(`Re-planned: ${out.title}`);
+		} else if (a.type === 'create') {
 			const e = createFor(a, byName, byId, applied);
 			if (e && typeof a.replace === 'string' && alternatives[a.replace]) {
 				alternatives[a.replace].push(e.name);

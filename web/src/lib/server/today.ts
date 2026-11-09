@@ -193,8 +193,10 @@ export type SessionPlanExercise = PlannedExercise & { exerciseId: number };
 export type SessionPlan = Omit<DayPlan, 'exercises'> & {
 	exercises: SessionPlanExercise[];
 	summary: string | null;
-	reviewed: boolean; // Claude reviewed the picks and wrote the reasons
+	reviewed: boolean; // Claude planned (or reviewed) the day and wrote the reasons
 	checkIn: CheckIn;
+	/** The coach's sketch of the next few workouts (not a schedule: re-planned every day). */
+	lookAhead?: { title: string; why: string }[];
 };
 
 export function toSessionPlan(day: DayPlan, checkIn: CheckIn): SessionPlan {
@@ -301,7 +303,7 @@ export function isPerSide(e: { name: string; muscle: string; perSide?: boolean |
 }
 
 /** The last bodyweight a session recorded (for first-weight estimates when nothing is logged). */
-function latestBodyweightKg(): number | null {
+export function latestBodyweightKg(): number | null {
 	return (
 		db
 			.select({ bw: sessions.bodyweightKg })
@@ -344,7 +346,7 @@ export async function fillAfterSkip(
 	for (let more = true; more; ) {
 		more = false;
 		for (const x of growable) {
-			if (x.sets >= 4) continue;
+			if (x.sets >= 3) continue; // 2–3 hard sets per exercise
 			x.sets++;
 			if (sessionMinutes([...kept, ...added]) > budgetMin) {
 				x.sets--;
@@ -384,7 +386,7 @@ export function addInjury(muscles: Muscle[], note: string, days = 7) {
 	repo.patchSettings({ profile: { ...cur, dynamic: { ...(cur.dynamic ?? {}), injuries } } });
 }
 
-function historyOf(sets: LoggedSet[], name: string): History {
+export function historyOf(sets: LoggedSet[], name: string): History {
 	const by = new Map<number | string, History[number]>();
 	for (const s of sets) {
 		if (s.exercise !== name || s.isWarmup) continue;

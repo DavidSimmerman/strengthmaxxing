@@ -13,6 +13,8 @@
 	const LEVELS = ['Fresh', 'A bit', 'Very'];
 	let energy = $state(3);
 	let minutes = $state(45);
+	let note = $state(''); // "feeling legs", "shoulder tweaky": the coach plans around it
+	let waitSkipped = $state(false); // used the quick plan instead of waiting for the coach
 	// svelte-ignore state_referenced_locally
 	let sore = $state<Record<string, number>>(Object.fromEntries(data.tiles.map((t) => [t.key, t.level])));
 	let plan = $state<SessionPlan | null>(null);
@@ -41,11 +43,13 @@
 	const tileClass = (l: number) =>
 		l === 0 ? 'bg-panel text-zinc-200' : l === 1 ? 'bg-[#f5c518]/15 text-[#f5c518]' : 'bg-accent/15 text-accent';
 
-	// Ask Claude to review the engine's plan; applied only if it lands before Start.
+	// The coach plans today from the whole picture (about a minute); the code's quick plan is
+	// the fallback, and is applied only if the coach's lands before Start.
 	async function requestReview(p: SessionPlan) {
 		reviewCtl?.abort();
 		reviewCtl = new AbortController();
 		review = 'pending';
+		waitSkipped = false;
 		try {
 			const r = await fetch('/api/coach/today/review', {
 				method: 'POST',
@@ -116,6 +120,7 @@
 		>
 			<input type="hidden" name="energy" value={energy} />
 			<input type="hidden" name="minutes" value={minutes} />
+			<input type="hidden" name="note" value={note} />
 			{#each data.tiles as t (t.key)}<input type="hidden" name="sore_{t.key}" value={sore[t.key]} />{/each}
 
 			<p class="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-400">Energy</p>
@@ -170,6 +175,16 @@
 				{/each}
 			</div>
 
+			<label class="mt-5 block">
+				<span class="mb-2 block text-xs font-bold uppercase tracking-wider text-zinc-400">Anything today?</span>
+				<input
+					bind:value={note}
+					maxlength="200"
+					placeholder="Feeling legs · shoulder is tweaky · only dumbbells"
+					class="w-full rounded-xl border border-line bg-panel px-3 py-2.5 text-base text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-accent"
+				/>
+			</label>
+
 			<button
 				disabled={building}
 				class="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 font-bold text-ink transition active:scale-[0.98] disabled:opacity-60"
@@ -181,11 +196,16 @@
 	{:else}
 		<header class="mb-3 flex items-start justify-between">
 			<div>
-				<p class="text-[11px] font-bold uppercase tracking-widest text-accent">Built for today</p>
-				<h1 class="text-2xl font-black leading-tight tracking-tight">{plan.title}</h1>
-				<p class="mt-0.5 text-xs text-zinc-400">
-					{plan.totalSets} sets · about {plan.minutes} min{restingLine ? ` · resting: ${restingLine}` : ''}
-				</p>
+				{#if review === 'pending' && !waitSkipped}
+					<p class="text-[11px] font-bold uppercase tracking-widest text-accent">Today</p>
+					<h1 class="text-2xl font-black leading-tight tracking-tight">Planning…</h1>
+				{:else}
+					<p class="text-[11px] font-bold uppercase tracking-widest text-accent">{plan.reviewed ? "Coach's plan for today" : 'Quick plan for today'}</p>
+					<h1 class="text-2xl font-black leading-tight tracking-tight">{plan.title}</h1>
+					<p class="mt-0.5 text-xs text-zinc-400">
+						{plan.totalSets} sets · about {plan.minutes} min · you have {plan.checkIn.minutes}
+					</p>
+				{/if}
 			</div>
 			<div class="flex shrink-0 items-center gap-3">
 				<CoachChat
@@ -198,10 +218,22 @@
 			</div>
 		</header>
 
+		{#if review === 'pending' && !waitSkipped}
+			<div class="rounded-2xl border border-line bg-panel p-4">
+				<p class="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+					<span class="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent"></span>Your coach is planning today
+				</p>
+				<p class="mt-1.5 text-xs leading-snug text-zinc-400">
+					Looking at what each muscle got this week, how your lifts went last time, your runs and your check-in. Usually
+					under a minute.
+				</p>
+				<button type="button" onclick={() => (waitSkipped = true)} class="mt-3 py-1 text-xs font-semibold text-zinc-400 underline hover:text-zinc-200"
+					>Don't wait: use the quick plan</button
+				>
+			</div>
+		{:else}
 		{#if plan.summary}
-			<p class="mb-3 rounded-xl bg-panel px-3 py-2 text-sm text-zinc-300">{plan.summary}</p>
-		{:else if review === 'pending'}
-			<p class="mb-3 flex items-center gap-1.5 text-[11px] text-zinc-500"><Sparkles class="h-3 w-3 animate-pulse" />Coach is reviewing the picks…</p>
+			<p class="mb-3 rounded-xl border border-accent2/30 bg-accent2/5 px-3 py-2 text-sm leading-snug text-zinc-200">{plan.summary}</p>
 		{/if}
 
 		{#if !plan.exercises.length}
@@ -233,6 +265,19 @@
 			{/each}
 		</div>
 
+		{#if plan.lookAhead?.length}
+			<p class="mb-1.5 mt-5 text-xs font-bold uppercase tracking-wider text-zinc-400">Likely next</p>
+			<div class="flex flex-col gap-1.5">
+				{#each plan.lookAhead as l, i (i)}
+					<div class="rounded-xl border border-line bg-panel px-3 py-2">
+						<p class="text-sm font-semibold text-zinc-200">{l.title}</p>
+						{#if l.why}<p class="text-[11px] leading-snug text-zinc-500">{l.why}</p>{/if}
+					</div>
+				{/each}
+			</div>
+			<p class="mt-1 text-[10px] text-zinc-500">Re-planned every time you train, so rest days and how you feel are always taken into account.</p>
+		{/if}
+
 		{#if weekRows.length}
 			<p class="mb-1.5 mt-5 text-xs font-bold uppercase tracking-wider text-zinc-400">Last 7 days, sets per muscle</p>
 			<div class="flex flex-col gap-1.5">
@@ -262,7 +307,8 @@
 			</button>
 		</form>
 		{#if review === 'failed'}
-			<p class="mt-2 flex items-center justify-center gap-1 text-[11px] text-zinc-500"><Info class="h-3 w-3" />Coach review unavailable; using the plan as built.</p>
+			<p class="mt-2 flex items-center justify-center gap-1 text-[11px] text-zinc-500"><Info class="h-3 w-3" />The coach couldn't be reached, so this is the quick plan.</p>
+		{/if}
 		{/if}
 	{/if}
 </div>

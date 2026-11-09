@@ -61,7 +61,8 @@ export const DAVID_TIERS: Record<Muscle, Tier> = {
 // ---------- volume and fatigue ----------
 
 /** Weekly fractional hard-set targets per tier (Schoenfeld 2017; Pelland 2025). */
-const TIER_SETS: Record<Tier, number> = { grow: 16, build: 12, maintain: 6, athletic: 8 };
+// Athletic (legs, for a runner): light strength work only; running does the rest.
+const TIER_SETS: Record<Tier, number> = { grow: 16, build: 12, maintain: 6, athletic: 4 };
 
 export function weeklyTarget(m: Muscle, s: CoachSettings): number {
 	const base = TIER_SETS[s.tiers[m]] * (s.cutting ? 0.85 : 1);
@@ -142,6 +143,8 @@ export type CheckIn = {
 	minutes: number; // time available
 	/** Muscles the lifter doesn't want today ("not feeling legs"): their time goes to others. */
 	skip?: Muscle[];
+	/** Anything the lifter wants the coach to know today ("feeling legs", "shoulder tweaky"). */
+	note?: string;
 };
 
 export type MuscleDay = {
@@ -165,7 +168,11 @@ export const INTERVAL_DAYS: Record<Tier, number> = { grow: 2, build: 3, maintain
 /** Muscles ready this soon before they're due can join a neighbour that is due (legs together). */
 const PULL_FORWARD = 0.7;
 
-export const intervalDays = (m: Muscle, s: CoachSettings) => INTERVAL_DAYS[s.tiers[m]];
+/** Core comes round about every third day, added on to whatever else is trained. */
+export const intervalDays = (m: Muscle, s: CoachSettings) =>
+	MUSCLE_GROUP[m] === 'Core' ? 3 : LEG_MUSCLES.includes(m) ? 4 : INTERVAL_DAYS[s.tiers[m]];
+/** Body areas per workout, not counting core (which is added on): focused days, not full body. */
+export const MAX_AREAS = 3;
 /** Half a day of slack, so Monday evening → Wednesday lunch still counts as two days. */
 const dueAfterH = (m: Muscle, s: CoachSettings) => intervalDays(m, s) * 24 - 12;
 /** A day lighter than this gets topped up with the muscles closest to due. */
@@ -189,12 +196,15 @@ export function hoursSinceTrained(sets: LoggedSet[], now: Date): Partial<Record<
 		bySession.set(k, b);
 	}
 	const out: Partial<Record<Muscle, number>> = {};
-	for (const { at, dose } of bySession.values())
-		for (const [m, d] of entries(dose)) {
-			if (d < 2.5) continue;
-			const h = (now.getTime() - at.getTime()) / H;
+	for (const { at, dose } of bySession.values()) {
+		const h = (now.getTime() - at.getTime()) / H;
+		const mark = (m: Muscle) => {
 			if (out[m] == null || h < out[m]!) out[m] = h;
-		}
+		};
+		for (const [m, d] of entries(dose)) if (d >= 2.5) mark(m);
+		// Legs are one block: 2.5+ sets across all leg muscles counts as a leg session.
+		if (LEG_MUSCLES.reduce((n, m) => n + (dose[m] ?? 0), 0) >= 2.5) LEG_MUSCLES.forEach(mark);
+	}
 	return out;
 }
 
@@ -217,8 +227,10 @@ export function chooseMuscles(
 	const prio: Record<Tier, number> = { grow: 1.3, build: 1, maintain: 0.7, athletic: 0.9 };
 	const skip = new Set(checkIn.skip ?? []);
 	// How far into its gap each muscle is: 1 = due now.
+	// Legs train as one block: any leg session resets every leg muscle's clock.
+	const legH = sinceH ? Math.min(...LEG_MUSCLES.map((l) => sinceH[l] ?? Infinity)) : Infinity;
 	const dueness = (m: Muscle) => {
-		const h = sinceH?.[m];
+		const h = LEG_MUSCLES.includes(m) && legH < Infinity ? legH : sinceH?.[m];
 		if (!sinceH || h == null) return 2;
 		return h / dueAfterH(m, s);
 	};
@@ -245,6 +257,9 @@ export function chooseMuscles(
 		const share = (target * intervalDays(m, s)) / 7;
 		let sets = clamp(Math.round(Math.min(need, need > share * 1.5 ? share + 1 : share)), 2, SESSION_CAP[tier]);
 		if (sore === 1) sets = Math.max(2, sets - 2);
+		// Core is an add-on to the day, not a session of its own: one or two exercises.
+		if (m === 'abs') sets = Math.min(sets, 4);
+		if (m === 'obliques') sets = Math.min(sets, 3);
 		sets = Math.max(2, Math.round(sets * Math.min(1, energyMult)));
 		const due = dueness(m);
 		const reason =
@@ -260,7 +275,16 @@ export function chooseMuscles(
 	// Never an empty day: if little is due, bring forward what is closest to due.
 	const rest = [...candidates.filter((c) => !rows.includes(c) && c.due >= TOP_UP_DUE), ...extras].sort((a, b) => b.due - a.due);
 	while (rows.reduce((n, r) => n + r.sets, 0) < MIN_DAY_SETS && rest.length) rows.push(rest.shift()!);
-	return rows.map(({ score: _s, due: _d, ...r }) => r);
+	// Focus: the most-needed areas only. He trains again tomorrow, so the rest waits for then.
+	const areas: string[] = [];
+	const focused = rows.filter((r) => {
+		const g = MUSCLE_GROUP[r.muscle];
+		if (g === 'Core' || areas.includes(g)) return true;
+		if (areas.length >= MAX_AREAS) return false;
+		areas.push(g);
+		return true;
+	});
+	return focused.map(({ score: _s, due: _d, ...r }) => r);
 }
 
 /** When a muscle that isn't due today comes round next, in words ("tomorrow", "in 2 days"). */
@@ -292,6 +316,8 @@ export type Prescription = {
 };
 
 type Ctx = {
+	/** For "how long since this lift": a long gap holds or lowers the weight. */
+	now?: Date;
 	category: string;
 	tier: Tier;
 	energy: number | null;
@@ -447,8 +473,21 @@ export function prescribe(name: string, muscle: string, sets: number, hist: Hist
 	let target = clamp(minReps + 1, lo, hi);
 	let kind: Prescription['kind'] = 'hold';
 	let reason: string;
+	const daysAway = ctx.now ? (ctx.now.getTime() - last.at.getTime()) / 864e5 : 0;
+	// The last set at the top was all-out (0 left) when it should have had reps to spare.
+	const grind = atTop.at(-1)?.rir === 0 && rir[0] >= 1;
 
-	if (p.noLoad && lastLb === 0) {
+	if (daysAway >= 21 && lastLb > 0 && !p.noLoad) {
+		weightLb = nextLb(ctx.category, lastLb, -1) || lastLb;
+		target = clamp(lo + 2, lo, hi);
+		kind = weightLb < lastLb ? 'down' : 'hold';
+		reason = `First time in ${Math.round(daysAway / 7)} weeks: ${weightLb} lb to ease back in.`;
+	} else if (minReps >= hi && (daysAway >= 10 || grind) && !(p.noLoad && lastLb === 0)) {
+		target = hi;
+		reason = grind
+			? `Hit ${hi} at ${lastLb} lb, but the last set was all-out: same weight until it moves easier.`
+			: `${Math.round(daysAway)} days since last time: same ${lastLb} lb before going up.`;
+	} else if (p.noLoad && lastLb === 0) {
 		target = clamp(minReps + 1, lo, hi + 5);
 		kind = minReps >= hi ? 'up' : 'hold';
 		reason = p.timed

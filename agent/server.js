@@ -8,6 +8,7 @@
 //   POST /plan     -> {plan:{name,weeks,deloadWeek,progression,days:[{name,dayOfWeek,exercises:[{name,sets,reps,restSec,weightKg,notes}]}]},rationale,reply}
 //   POST /progress -> {adjustments:[{name,suggestedWeightKg,suggestedReps,deltaPct,reason}],summary}
 //   POST /review   -> {summary,items:[{name,swapTo,reason}]}  (today's generated workout)
+//   POST /day      -> {title,summary,exercises:[...],lookAhead:[...]} (the coach plans today)
 //   POST /live     -> {reply,actions:[...]}                    (mid-workout chat)
 //   POST /note     -> {title,body}                             (home-screen coach note)
 
@@ -354,6 +355,77 @@ function validateReview(b) {
   return null;
 }
 
+// Today's workout, planned by the coach with the whole picture (see web/src/lib/server/dayplan.ts).
+function dayPrompt(input) {
+  const schema =
+    '{"title":string,"summary":string,"exercises":[{"name":string,"sets":number,"repLow":number,"repHigh":number,' +
+    '"targetReps":number,"weightLb":number|null,"reason":string}],"lookAhead":[{"title":string,"why":string}]}';
+  const { feedback, ...facts } = input;
+  return [
+    'You are an expert personal trainer and strength coach. You coach ONE lifter and you do all the thinking, so he can ' +
+      'just show up and lift. Plan TODAY\'s workout. Think it through carefully before answering: this decision is the ' +
+      'whole product.',
+    '',
+    `Everything you know (JSON): ${JSON.stringify(facts)}`,
+    '',
+    'How he trains:',
+    '- He lifts most days, with rest days at random (sometimes 2 in a row, sometimes none for a week). So ASSUME HE WILL ' +
+      'TRAIN AGAIN IN THE NEXT DAY OR TWO. Never cram the whole body into one workout. Today is ONE focused workout on ' +
+      'what is most due; everything else goes to the coming workouts.',
+    '- Focus: at most 3 body areas (areas: Chest, Shoulders, Arms, Back, Legs; Core is separate). Core is added on to ' +
+      'a workout about every third day (1-2 exercises, 3-6 sets), not a day of its own. Classic good pairings: chest + ' +
+      'side delts + triceps; back + rear delts + biceps; arms + shoulders; but pick whatever the numbers say is due.',
+    '- Weekly hard-set targets per muscle are in muscles[].weeklyTarget; last7Days is what the past 7 days gave. Over a ' +
+      'rolling week every muscle should reach its target. Priority ("grow") muscles come round about every 2-3 days, the ' +
+      'rest every 3-4. Do not train a muscle hard (3+ sets) again until about 48 hours after its last hard session ' +
+      '(lastHardSessionHoursAgo). Muscles with recoveredPct under 60 or "very sore" wait.',
+    '- Legs: light and runner-friendly only (low soreness: step-ups, single-leg work, leg curls, calf raises, low-' +
+      'legSoreness moves; never heavy eccentric work like Bulgarian split squats or heavy RDLs before running). About ' +
+      'every 4 days, 2-3 exercises, 2-3 sets each. Keep legs away from the day before and after a long run or ' +
+      'basketball (runsAndSports). If his check-in note says he is feeling legs, give him a proper (still ' +
+      'runner-friendly) leg day.',
+    '- His check-in comes first: energy (drained/low: fewer sets, hold weights; great: full workout), soreness per ' +
+      'muscle, minutes available, and his note, which overrides your plan ("feeling legs", "shoulder tweaky", ' +
+      '"only dumbbells today"). skipToday lists muscles he does not want today.',
+    '- Time: fit his minutes. Each set takes about 40 s of work plus its rest (compounds 2-2.5 min, isolations 90 s, ' +
+      'core and calves 60 s), plus about 1 min per exercise change and 2 min of warm-up sets for the first heavy lift. ' +
+      'Short on time: do the most-due work well and leave the rest for the next workouts (and say so). More time than ' +
+      'needed: add what is next most due, never filler; a shorter workout is fine.',
+    '',
+    'Exercises (use ONLY exact names from menu):',
+    '- Variety matters: he gets bored of the same workouts. For each muscle, do not repeat the exact exercise from the ' +
+      'last time that muscle was trained (see recentWorkouts and menu[].last3), EXCEPT favorites, which should appear ' +
+      'about two sessions out of three. Over the week mix angles: a stretch-position movement (stretchPosition) and a ' +
+      'squeeze/shortened one for each priority muscle. Chest and back lead with a compound.',
+    '- Sets: 2-3 hard sets per exercise, pushed close to failure: he focuses better with fewer, harder sets. Use 4 ' +
+      'only if there is a real reason, and give it in that exercise\'s reason. At most 6-8 sets for one muscle in a ' +
+      'workout; usually 1-2 exercises per muscle.',
+    '- Order: the biggest, most demanding lifts first while fresh, isolations after, core last.',
+    '',
+    'Weights and reps:',
+    '- menu[].today is the progression call already made from his history with strict rules: up a step only after ' +
+      'every set hit the top of the range with reps to spare; any miss holds the weight; two misses in a row, or a long ' +
+      'gap, drops a step; a grinding last set holds. Use today.weightLb unless you see a reason to go LOWER (e.g. low ' +
+      'energy, soreness, a lift trending down); never higher. Return weightLb for every loaded exercise.',
+    '- repLow/repHigh: today.repRange unless you have a reason to change it (e.g. a lift that stalled at the same ' +
+      'numbers 3 sessions running moves to a different range). targetReps: the reps to aim for on every set today, ' +
+      'from last time (one more than last time\'s lowest set, within the range).',
+    '',
+    'Writing (he reads this on his phone between sets):',
+    '- reason: ONE short sentence per exercise, plain words, citing his real numbers: "8, 8, 7 at 185 lb last time: ' +
+      'same weight, aim for 8 on all three." or "Swapped in for preacher curls for variety; your favorite comes back ' +
+      'next time." Weights in lb, "per arm" for oneSideAtATime, seconds for repsAreSeconds. Never use jargon: no RIR, ' +
+      'RPE, e1RM, 1RM, "hard sets", "volume", "stimulus".',
+    '- title: the focus in 2-5 words, e.g. "Chest, Shoulders + Triceps" or "Back + Biceps, Core".',
+    '- summary: 1-2 sentences: why this focus today (what is due, what you are working around) and what comes next.',
+    '- lookAhead: the 2-3 workouts you expect next if he keeps training daily, each {title, why} (e.g. {"title":"Back ' +
+      '+ Biceps","why":"Back is 4 sets short and last trained 3 days ago."}). It is a sketch, re-planned every day.',
+    ...(feedback?.length ? ['', `Your previous plan broke these rules. Fix every one: ${JSON.stringify(feedback)}`] : []),
+    '',
+    `Output ONLY minified JSON of this shape: ${schema}`,
+  ].join('\n');
+}
+
 // Mid-workout chat: a short reply plus actions the web app validates and applies.
 function livePrompt(input) {
   const schema =
@@ -365,6 +437,7 @@ function livePrompt(input) {
     '{"type":"dislike","exercise":string}|' +
     '{"type":"favorite","exercise":string}|' +
     '{"type":"skip","muscles":[string]}|' +
+    '{"type":"replan","note":string}|' +
     '{"type":"create","name":string,"basedOn":string,"equipment":"barbell"|"dumbbell"|"machine"|"cable"|"bodyweight"|"smith machine"|"kettlebell","perSide":boolean,"replace":string|null}|' +
     '{"type":"injury","muscles":[string],"note":string}]}';
   const preview = input.stage === 'preview';
@@ -393,6 +466,9 @@ function livePrompt(input) {
       'The app removes that area AND fills the freed time with other muscles that are due, so the session stays ' +
       'about as long. Use "skip" (not "remove") whenever they talk about an area rather than one exercise, unless ' +
       'they say they want a shorter session.',
+    '- "replan" (only BEFORE starting, stage "preview"): they want a different workout altogether, not a ' +
+      'tweak ("actually I\'m feeling legs", "can we do arms instead", "I only have 20 minutes now"). note = what ' +
+      'they want, in a few words. The coach then re-plans the whole day around it. Use it instead of many swaps.',
     '- "favorite": they say they like or prefer an exercise ("I like Smith bench more than DB bench", "more of ' +
       'X"). Save the one they prefer. It is then picked most sessions, with the others still rotated in for ' +
       'variety (so do NOT dislike the one they like less). If the less-liked one is in today\'s session and they ' +
@@ -557,6 +633,16 @@ const server = createServer(async (req, res) => {
     return handleModelEndpoint(res, notePrompt(body), { effort: 'low' });
   }
 
+  if (req.method === 'POST' && url === '/day') {
+    let body;
+    try {
+      body = await readBody(req);
+    } catch (e) {
+      return send(res, 400, { error: e.message });
+    }
+    if (!Array.isArray(body?.menu) || !body?.checkIn) return send(res, 400, { error: 'menu[] and checkIn required' });
+    return handleModelEndpoint(res, dayPrompt(body), { effort: process.env.AGENT_DAY_EFFORT || 'high' });
+  }
   if (req.method === 'POST' && url === '/review') {
     let body;
     try {

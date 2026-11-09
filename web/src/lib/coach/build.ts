@@ -104,6 +104,7 @@ export function buildDay(input: BuildInput): DayPlan {
 			tier: settings.tiers[md.muscle],
 			energy: checkIn.energy,
 			sore,
+			now,
 			sets,
 			bodyweightKg: input.bodyweightKg
 		});
@@ -133,9 +134,9 @@ export function buildDay(input: BuildInput): DayPlan {
 		const own = chosen.find((x) => x.forMuscle === md.muscle);
 		if (!own) continue;
 		const left = remaining.get(md.muscle) ?? 0;
-		if (left >= 1.5) add(md, 1, Math.min(4, Math.round(left)));
+		if (left >= 1.5) add(md, 1, Math.min(3, Math.round(left)));
 		for (const x of chosen.filter((y) => y.forMuscle === md.muscle))
-			while ((remaining.get(md.muscle) ?? 0) >= 1 && x.sets < 4) {
+			while ((remaining.get(md.muscle) ?? 0) >= 1 && x.sets < 3) {
 				x.sets++;
 				if (!fits(chosen)) {
 					x.sets--;
